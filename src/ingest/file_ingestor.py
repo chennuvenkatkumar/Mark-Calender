@@ -42,6 +42,29 @@ def extract_text(file_path: str | Path) -> str:
     raise ValueError(f"Unsupported syllabus file type: {suffix or '<none>'}")
 
 
+def extract_text_from_bytes(data: bytes, filename: str) -> str:
+    """Return readable text from a file already loaded into memory as bytes.
+
+    Used by the web server where the uploaded file is never written to disk.
+    Dispatches to the same extractors as extract_text() based on the filename
+    extension so behaviour is identical to the path-based version.
+
+    Raises ValueError for unsupported or empty content.
+    """
+    suffix = Path(filename).suffix.lower()
+
+    if not data:
+        raise ValueError("Uploaded file is empty.")
+
+    if suffix in PDF_SUFFIXES:
+        return _extract_pdf_bytes(data)
+
+    if suffix in TEXT_SUFFIXES:
+        return data.decode("utf-8")
+
+    raise ValueError(f"Unsupported syllabus file type: {suffix or '<none>'}")
+
+
 def _extract_pdf_text(path: Path) -> str:
     """Extract and return all text content from a PDF file using PyMuPDF.
 
@@ -68,4 +91,26 @@ def _extract_pdf_text(path: Path) -> str:
         document.close()
 
     # Drop blank pages before joining so the output text has no empty sections
+    return "\n".join(page.strip() for page in pages if page.strip())
+
+
+def _extract_pdf_bytes(data: bytes) -> str:
+    """Extract text from a PDF given as raw bytes using PyMuPDF.
+
+    Opens the document from the in-memory byte stream so no temp file is
+    ever written to disk.  Same page-joining logic as _extract_pdf_text().
+    """
+    try:
+        import fitz
+    except ImportError as exc:
+        raise ImportError(
+            "PyMuPDF is required to ingest PDF syllabi. Install the 'pymupdf' package."
+        ) from exc
+
+    document = fitz.open(stream=data, filetype="pdf")
+    try:
+        pages = [page.get_text("text") for page in document]
+    finally:
+        document.close()
+
     return "\n".join(page.strip() for page in pages if page.strip())
