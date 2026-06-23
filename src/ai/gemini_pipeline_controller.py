@@ -8,7 +8,7 @@ from typing import Protocol
 
 
 # Gemini model used when the caller does not override the model name
-DEFAULT_MODEL = "gemini-1.5-flash"
+DEFAULT_MODEL = "gemini-2.5-flash-lite"
 
 # Strict prompt that instructs Gemini to return only a JSON array — no markdown,
 # no prose — containing one object per academic event found in the syllabus.
