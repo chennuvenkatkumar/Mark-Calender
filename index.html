@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Syllabus to Calendar - Extract & Manage Deadlines</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .step-indicator {
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 40px;
+        }
+
+        .step-item {
+            flex: 1;
+            text-align: center;
+            position: relative;
+        }
+
+        .step-circle {
+            width: 50px;
+            height: 50px;
+            margin: 0 auto 15px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 20px;
+            transition: all 0.3s ease;
+            border: 3px solid #e0e0e0;
+            background: white;
+        }
+
+        .step-item.active .step-circle {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+            transform: scale(1.1);
+        }
+
+        .step-item.completed .step-circle {
+            background: #10b981;
+            color: white;
+            border-color: #10b981;
+        }
+
+        .step-item.completed .step-circle::after {
+            content: '✓';
+            font-size: 24px;
+        }
+
+        .step-connector {
+            position: absolute;
+            top: 25px;
+            left: 50%;
+            width: 100%;
+            height: 3px;
+            background: #e0e0e0;
+            z-index: -1;
+        }
+
+        .step-item:last-child .step-connector {
+            display: none;
+        }
+
+        .step-item.completed ~ .step-item .step-connector {
+            background: #10b981;
+        }
+
+        .step-text {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .step-item.active .step-text {
+            color: #667eea;
+            font-weight: 700;
+        }
+
+        .section {
+            display: none;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .upload-zone {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 60px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+        }
+
+        .upload-zone:hover,
+        .upload-zone.dragover {
+            border-color: #764ba2;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.2);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+
+        .event-card {
+            background: white;
+            border-left: 5px solid #667eea;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .event-card:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+            transform: translateX(5px);
+        }
+
+        .event-card input,
+        .event-card textarea {
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 14px;
+            margin: 5px 0;
+            width: 100%;
+            font-family: inherit;
+        }
+
+        .event-card input:focus,
+        .event-card textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 15px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-add {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-add:hover {
+            background: #059669;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-processing {
+            background: #dbeafe;
+            color: #0369a1;
+        }
+
+        .status-success {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(102, 126, 234, 0.1);
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status-message {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: none;
+            animation: slideIn 0.3s ease;
+        }
+
+        .status-message.show {
+            display: block;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(-20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .summary-stat {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin: 10px;
+        }
+
+        .summary-stat .number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .summary-stat .label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        tr:hover {
+            background: #f9fafb;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 15px;
+        }
+
+        .divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #e0e0e0, transparent);
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="min-h-screen py-8 px-4">
+        <div class="max-w-4xl mx-auto">
+            <!-- Header -->
+            <div class="text-center mb-12 text-white">
+                <h1 class="text-5xl font-bold mb-3">📅 Syllabus to Calendar</h1>
+                <p class="text-xl opacity-90">Extract deadlines from your syllabus in seconds</p>
+            </div>
+
+            <!-- Main Card -->
+            <div class="glass rounded-20 p-8 shadow-2xl">
+                
+                <!-- Step Indicator -->
+                <div class="step-indicator">
+                    <div class="step-item active" data-step="1">
+                        <div class="step-connector"></div>
+                        <div class="step-circle">1</div>
+                        <div class="step-text">Upload</div>
+                    </div>
+                    <div class="step-item" data-step="2">
+                        <div class="step-connector"></div>
+                        <div class="step-circle">2</div>
+                        <div class="step-text">Processing</div>
+                    </div>
+                    <div class="step-item" data-step="3">
+                        <div class="step-connector"></div>
+                        <div class="step-circle">3</div>
+                        <div class="step-text">Review</div>
+                    </div>
+                    <div class="step-item" data-step="4">
+                        <div class="step-connector"></div>
+                        <div class="step-circle">4</div>
+                        <div class="step-text">Download</div>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- Step 1: Upload -->
+                <div class="section active" id="step-1">
+                    <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                        <div style="font-size: 48px; margin-bottom: 15px;">📄</div>
+                        <p style="font-size: 18px; font-weight: bold; color: #333; margin-bottom: 8px;">
+                            Click to upload or drag & drop
+                        </p>
+                        <p style="color: #999; font-size: 14px;">
+                            PDF, TXT, or MD files (max 20 MB)
+                        </p>
+                    </div>
+                    <input type="file" id="fileInput" accept=".pdf,.txt,.md" style="display: none;" onchange="handleFileSelect(event)">
+                    
+                    <div style="margin-top: 20px; text-align: center;">
+                        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                            📁 Choose File
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Processing -->
+                <div class="section" id="step-2">
+                    <div style="text-align: center; padding: 40px 20px;">
+                        <div class="loading-spinner"></div>
+                        <h3 style="font-size: 20px; font-weight: bold; color: #333; margin: 20px 0;">
+                            Processing your syllabus...
+                        </h3>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="processingProgress" style="width: 0%;"></div>
+                        </div>
+                        <p style="color: #999; margin-top: 15px; font-size: 14px;">
+                            <span id="processingStatus">Uploading file...</span>
+                        </p>
+                        <div style="margin-top: 30px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                            <div class="summary-stat">
+                                <div class="label">Step</div>
+                                <div class="number"><span id="currentStep">1</span>/4</div>
+                            </div>
+                            <div class="summary-stat">
+                                <div class="label">File</div>
+                                <div class="number" id="fileName" style="font-size: 16px;">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Review Events -->
+                <div class="section" id="step-3">
+                    <h2 style="font-size: 24px; font-weight: bold; color: #333; margin-bottom: 10px;">
+                        📋 Review Extracted Events
+                    </h2>
+                    <p style="color: #666; margin-bottom: 20px; font-size: 14px;">
+                        Check, edit, or remove events before downloading. You can modify any details.
+                    </p>
+
+                    <div id="statusMessage" class="status-message"></div>
+
+                    <div style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap;">
+                        <div class="summary-stat">
+                            <div class="label">Total Events</div>
+                            <div class="number" id="eventCount">0</div>
+                        </div>
+                        <div class="summary-stat">
+                            <div class="label">Course Name</div>
+                            <div class="number" id="courseName" style="font-size: 14px;">-</div>
+                        </div>
+                    </div>
+
+                    <div id="eventsList" style="margin-bottom: 30px;">
+                        <!-- Events will be populated here -->
+                    </div>
+
+                    <button class="btn btn-add" onclick="addNewEvent()" style="margin-bottom: 20px; width: 100%;">
+                        ➕ Add New Event
+                    </button>
+
+                    <div style="display: flex; gap: 10px; margin-top: 30px;">
+                        <button class="btn btn-secondary" onclick="goToStep(1)" style="flex: 1;">
+                            ← Back to Upload
+                        </button>
+                        <button class="btn btn-primary" onclick="goToStep(4)" style="flex: 1;">
+                            Continue to Download →
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 4: Download -->
+                <div class="section" id="step-4">
+                    <div style="text-align: center; padding: 40px 20px;">
+                        <div style="font-size: 64px; margin-bottom: 20px;">✅</div>
+                        <h2 style="font-size: 28px; font-weight: bold; color: #10b981; margin-bottom: 10px;">
+                            All Set!
+                        </h2>
+                        <p style="color: #666; font-size: 16px; margin-bottom: 30px;">
+                            Your calendar is ready. Download the .ics file to import into any calendar app.
+                        </p>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; max-width: 500px; margin-left: auto; margin-right: auto;">
+                            <div class="summary-stat">
+                                <div class="label">Events Ready</div>
+                                <div class="number" id="finalEventCount">0</div>
+                            </div>
+                            <div class="summary-stat">
+                                <div class="label">File Type</div>
+                                <div class="number" style="font-size: 18px;">📅 .ics</div>
+                            </div>
+                        </div>
+
+                        <div style="background: #eff6ff; border-left: 4px solid #0369a1; padding: 15px; border-radius: 8px; margin-bottom: 30px; text-align: left;">
+                            <p style="font-weight: 600; color: #0369a1; margin-bottom: 8px;">📌 How to use:</p>
+                            <ul style="color: #666; font-size: 14px; line-height: 1.8;">
+                                <li>✓ Download the file below</li>
+                                <li>✓ Open Google Calendar / Outlook / Apple Calendar</li>
+                                <li>✓ Click "Import" or "Add calendar from file"</li>
+                                <li>✓ Select the downloaded .ics file</li>
+                                <li>✓ All events appear in your calendar!</li>
+                            </ul>
+                        </div>
+
+                        <button class="btn btn-primary" onclick="downloadCalendar()" style="width: 100%; padding: 16px; font-size: 16px; margin-bottom: 15px;">
+                            ⬇️ Download Calendar File
+                        </button>
+
+                        <button class="btn btn-secondary" onclick="goToStep(1)" style="width: 100%; padding: 14px;">
+                            📤 Process Another Syllabus
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="text-align: center; margin-top: 40px; color: rgba(255,255,255,0.8);">
+                <p style="font-size: 14px;">
+                    Made with ❤️ for students | Powered by Google Gemini AI
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentEvents = [];
+        let uploadedFileName = '';
+        let allStepsData = { course_name: '' };
+
+        // Drag and drop
+        const uploadZone = document.querySelector('.upload-zone');
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        uploadZone.addEventListener('dragover', () => uploadZone.classList.add('dragover'));
+        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+        uploadZone.addEventListener('drop', (e) => {
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length) handleFile(files[0]);
+        });
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) handleFile(file);
+        }
+
+        function handleFile(file) {
+            uploadedFileName = file.name;
+            showProcessing(file);
+        }
+
+        async function showProcessing(file) {
+            goToStep(2);
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                // Simulate progress
+                updateProgress(0, "Reading file...");
+                await new Promise(r => setTimeout(r, 500));
+                
+                updateProgress(25, "Extracting text from PDF...");
+                await new Promise(r => setTimeout(r, 800));
+                
+                updateProgress(50, "Sending to AI for analysis...");
+                await new Promise(r => setTimeout(r, 500));
+
+                // Send to server
+                const response = await fetch('http://localhost:8000/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                updateProgress(75, "Validating extracted data...");
+                await new Promise(r => setTimeout(r, 400));
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showError(data.detail || 'Upload failed');
+                    return;
+                }
+
+                updateProgress(100, "Done!");
+                currentEvents = data.events || [];
+                allStepsData.course_name = currentEvents.length > 0 ? currentEvents[0].course_name : 'Unknown Course';
+                
+                await new Promise(r => setTimeout(r, 800));
+                goToStep(3);
+
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+                goToStep(1);
+            }
+        }
+
+        function updateProgress(percent, status) {
+            document.getElementById('processingProgress').style.width = percent + '%';
+            document.getElementById('processingStatus').textContent = status;
+            document.getElementById('currentStep').textContent = Math.ceil(percent / 25);
+            document.getElementById('fileName').textContent = uploadedFileName.split('.')[0];
+        }
+
+        function showError(message) {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.className = 'status-message show status-error';
+            statusDiv.textContent = '❌ ' + message;
+            statusDiv.style.display = 'block';
+        }
+
+        function goToStep(step) {
+            // Hide all sections
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.step-item').forEach(s => s.classList.remove('active', 'completed'));
+
+            // Show current section
+            document.getElementById('step-' + step).classList.add('active');
+
+            // Update step indicators
+            for (let i = 1; i <= 4; i++) {
+                const stepItem = document.querySelector(`[data-step="${i}"]`);
+                if (i < step) {
+                    stepItem.classList.add('completed');
+                } else if (i === step) {
+                    stepItem.classList.add('active');
+                }
+            }
+
+            // Populate review step
+            if (step === 3) {
+                populateEvents();
+            }
+
+            // Populate download step
+            if (step === 4) {
+                document.getElementById('finalEventCount').textContent = currentEvents.length;
+            }
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function populateEvents() {
+            const eventsList = document.getElementById('eventsList');
+            eventsList.innerHTML = '';
+            document.getElementById('eventCount').textContent = currentEvents.length;
+            document.getElementById('courseName').textContent = allStepsData.course_name || 'Unknown';
+
+            if (currentEvents.length === 0) {
+                eventsList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>No events extracted. Please upload a valid syllabus.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            currentEvents.forEach((event, index) => {
+                eventsList.innerHTML += createEventCard(event, index);
+            });
+        }
+
+        function createEventCard(event, index) {
+            return `
+                <div class="event-card" data-index="${index}">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                        <div style="font-weight: bold; color: #667eea; font-size: 16px;">
+                            Event ${index + 1}
+                        </div>
+                        <button class="btn btn-danger btn-sm" onclick="removeEvent(${index})">
+                            🗑️ Delete
+                        </button>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; font-weight: 600; color: #333; margin-bottom: 5px; font-size: 13px;">
+                            Course Name
+                        </label>
+                        <input type="text" value="${event.course_name || ''}" onchange="updateEvent(${index}, 'course_name', this.value)" placeholder="e.g., Introduction to Python">
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; font-weight: 600; color: #333; margin-bottom: 5px; font-size: 13px;">
+                            Task/Assignment Name
+                        </label>
+                        <input type="text" value="${event.task_name || ''}" onchange="updateEvent(${index}, 'task_name', this.value)" placeholder="e.g., Midterm Exam">
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div>
+                            <label style="display: block; font-weight: 600; color: #333; margin-bottom: 5px; font-size: 13px;">
+                                📅 Due Date
+                            </label>
+                            <input type="date" value="${event.due_date || ''}" onchange="updateEvent(${index}, 'due_date', this.value)">
+                        </div>
+                        <div>
+                            <label style="display: block; font-weight: 600; color: #333; margin-bottom: 5px; font-size: 13px;">
+                                ⏰ Due Time
+                            </label>
+                            <input type="time" value="${event.due_time || '23:59'}" onchange="updateEvent(${index}, 'due_time', this.value)">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style="display: block; font-weight: 600; color: #333; margin-bottom: 5px; font-size: 13px;">
+                            📝 Description
+                        </label>
+                        <textarea onchange="updateEvent(${index}, 'description', this.value)" placeholder="Add notes about this event..." style="resize: vertical; min-height: 70px;">${event.description || ''}</textarea>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateEvent(index, field, value) {
+            if (currentEvents[index]) {
+                currentEvents[index][field] = value;
+            }
+        }
+
+        function removeEvent(index) {
+            currentEvents.splice(index, 1);
+            populateEvents();
+        }
+
+        function addNewEvent() {
+            const newEvent = {
+                course_name: allStepsData.course_name,
+                task_name: 'New Event',
+                due_date: new Date().toISOString().split('T')[0],
+                due_time: '23:59',
+                description: ''
+            };
+            currentEvents.push(newEvent);
+            populateEvents();
+        }
+
+        async function downloadCalendar() {
+            try {
+                const response = await fetch('http://localhost:8000/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ events: currentEvents })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Download failed');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `syllabus_${new Date().getFullYear()}_events.ics`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+
+                // Show success
+                const statusDiv = document.getElementById('statusMessage');
+                statusDiv.className = 'status-message show status-success';
+                statusDiv.textContent = '✅ Calendar downloaded successfully!';
+                statusDiv.style.display = 'block';
+
+            } catch (error) {
+                showError('Download failed: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
