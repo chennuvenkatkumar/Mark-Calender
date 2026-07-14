@@ -591,11 +591,16 @@
                 updateProgress(50, "Sending to AI for analysis...");
                 await new Promise(r => setTimeout(r, 500));
 
-                // Send to server
+                // Send to server with 60-second timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000);
+                
                 const response = await fetch('http://localhost:8000/process', {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutId);
 
                 updateProgress(75, "Validating extracted data...");
                 await new Promise(r => setTimeout(r, 400));
@@ -603,7 +608,7 @@
                 const data = await response.json();
 
                 if (!response.ok) {
-                    showError(data.detail || 'Upload failed');
+                    showError(data.detail || `Server error (${response.status}): Upload failed`);
                     return;
                 }
 
@@ -615,7 +620,15 @@
                 goToStep(3);
 
             } catch (error) {
-                showError(`Error: ${error.message}`);
+                let errorMsg = error.message;
+                if (error.name === 'AbortError') {
+                    errorMsg = 'Request timeout after 60 seconds. The AI service might be overloaded. Try again later.';
+                } else if (!navigator.onLine) {
+                    errorMsg = 'No internet connection. Please check your network.';
+                } else if (error.message.includes('Failed to fetch')) {
+                    errorMsg = 'Cannot connect to the server at localhost:8000. Is the server running?';
+                }
+                showError(errorMsg);
                 goToStep(1);
             }
         }
@@ -630,7 +643,25 @@
         function showError(message) {
             const statusDiv = document.getElementById('statusMessage');
             statusDiv.className = 'status-message show status-error';
-            statusDiv.textContent = '❌ ' + message;
+            
+            // Provide helpful suggestions based on error type
+            let suggestion = '';
+            if (message.includes('rate limit') || message.includes('429')) {
+                suggestion = ' | Tip: Wait 60 seconds and try again';
+            } else if (message.includes('timeout') || message.includes('504')) {
+                suggestion = ' | Tip: The API is busy, try again in a moment';
+            } else if (message.includes('scanned PDF') || message.includes('image')) {
+                suggestion = ' | Tip: Use a text-based PDF, not a scanned image';
+            } else if (message.includes('empty')) {
+                suggestion = ' | Tip: The PDF might be corrupted, try a different file';
+            }
+            
+            statusDiv.innerHTML = `
+                <div>❌ ${message}${suggestion}</div>
+                <div style="font-size: 12px; margin-top: 8px; opacity: 0.8;">
+                    Click below to try again
+                </div>
+            `;
             statusDiv.style.display = 'block';
         }
 
