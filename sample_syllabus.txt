@@ -1,0 +1,37 @@
+INTRODUCTION TO PYTHON PROGRAMMING
+Course: CS101
+Instructor: Dr. Jane Smith
+Fall 2024
+
+COURSE SCHEDULE AND DELIVERABLES:
+
+Week 1-2: Python Basics
+- Assignment 1: Hello World and Variables - Due September 15, 2024 at 11:59 PM
+- Quiz 1 on Python syntax - Due September 22, 2024 at 5:00 PM
+
+Week 3-4: Functions and Modules
+- Assignment 2: Build a Calculator - Due October 1, 2024 at 11:59 PM
+- Midterm Project Proposal - Due October 8, 2024 at 3:00 PM
+
+Week 5-6: Object-Oriented Programming
+- Assignment 3: Create a Class - Due October 20, 2024 at 11:59 PM
+- Lab Practical Exam - Due October 27, 2024 at 2:00 PM
+
+Week 7-8: Data Structures
+- Assignment 4: List and Dictionary Operations - Due November 10, 2024 at 11:59 PM
+- Code Review Submission - Due November 15, 2024 at 4:00 PM
+
+Week 9-10: File Handling and APIs
+- Assignment 5: API Integration Project - Due November 25, 2024 at 11:59 PM
+- Final Project Presentation - Due December 3, 2024 at 1:00 PM
+
+Week 11-12: Advanced Topics
+- Final Exam - December 15, 2024 at 10:00 AM
+- Assignment 6: Capstone Project - Due December 20, 2024 at 11:59 PM
+
+GRADING:
+- Assignments (50%): Due as specified above
+- Quizzes (20%): Throughout semester
+- Final Exam (30%): December 15, 2024
+
+All submissions must be made online via the course portal.
