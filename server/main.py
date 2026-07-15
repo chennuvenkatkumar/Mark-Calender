@@ -74,9 +74,9 @@ ALGORITHMS USED:
 
 HTTP ENDPOINTS:
 ───────────────
-GET  /health    → {"status": "ok"}              [Health check]
-POST /process   → {"events": [...], "count": N} [Main processing]
-POST /download  → binary .ics file              [Calendar export]
+GET  /health    → {"status": "ok"}                       [Health check]
+POST /process   → text/event-stream of phase/error/result events [Main processing, streamed]
+POST /download  → binary .ics file                       [Calendar export]
 
 Run locally:
     uvicorn server.main:app --reload --port 8000
@@ -98,17 +98,17 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 load_dotenv()
 
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 
 import asyncio
 import json
-import time
 
 # Import the four layers of the processing pipeline
 from src.ingest.file_ingestor import extract_text_from_bytes
-from src.ai.gemini_pipeline_controller import GeminiPipelineController
+from src.ai.gemini_pipeline_controller import GeminiPipelineController, DEFAULT_MODEL
 from src.validation.string_validator import sanitize_model_output
 from src.export.icalendar_factory import build_ics
+from src.calendar_push import google_calendar_client as gcal
 
 """
 INITIALIZATION SECTION - Configuration & Setup
@@ -168,208 +168,134 @@ async def health() -> dict[str, str]:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# ENDPOINT 2: /process (Main Processing Pipeline)
+# ENDPOINT 2: /process (Main Processing Pipeline, streamed via SSE)
 # ═════════════════════════════════════════════════════════════════════════════
-# PURPOSE: Coordinate the entire extraction and processing pipeline
+# PURPOSE: Coordinate the entire extraction pipeline, streaming real progress
 # CALLED BY: Frontend when user uploads a syllabus file
 # ACCEPTS: File upload (PDF, TXT, or MD)
-# RETURNS: {"events": [{...}, {...}], "count": N}
+# RETURNS: text/event-stream — a "phase" event per pipeline step, then either
+#          a final "result" event or an "error" event
 # HTTP METHOD: POST
 #
-# PROCESSING STEPS (In order):
-#  Step 1: Receive & validate uploaded file
-#  Step 2: Extract text from file (PDF/TXT/MD)
-#  Step 3: Send text to Google Gemini AI
-#  Step 4: Validate Gemini's JSON response
-#  Step 5: Return clean events to frontend
+# PROCESSING STEPS (In order, each emits a "phase" event before/after):
+#  Step 0: Receive & validate uploaded file (still a plain HTTP 400 on failure,
+#          since this happens before the stream opens)
+#  Step 1: Extract text from file (PDF/TXT/MD)
+#  Step 2: Send text to Google Gemini AI
+#  Step 3: Validate Gemini's JSON response
+#  Step 4: Emit final "result" event with clean events to frontend
 #
 # ERROR HANDLING:
-#  - 400: File validation failed (type, size, empty, etc.)
-#  - 429: Rate limit hit (Gemini free tier: 15 requests/minute)
-#  - 422: Gemini response couldn't be parsed as JSON
-#  - 500: Unexpected server error
-#  - 504: Gemini took too long (>45 seconds)
+#  - HTTP 400: file validation failed (type, size, empty) — before streaming starts
+#  - All other failures (missing API key, Gemini quota/rate limit, timeout,
+#    empty/unparseable AI response, unexpected exceptions) are sent as an
+#    in-band "error" SSE event, since the HTTP status is already committed to
+#    200 by the time streaming begins.
 
 @app.post("/process")
-async def process_syllabus(file: UploadFile = File(...)) -> JSONResponse:
+async def process_syllabus(file: UploadFile = File(...)) -> StreamingResponse:
     """
     Main processing endpoint - orchestrates the entire extraction pipeline.
-    
+
     INPUT: File upload (PDF, TXT, or MD)
-    OUTPUT: {"events": [{...}, {...}], "count": N}
-    
-    WORKFLOW:
-    ┌─ STEP 1: Receive & Validate File ──────────────────────────┐
-    │  • Get filename and file extension                          │
-    │  • Check file type is in SUPPORTED_TYPES                    │
-    │  • Check file is not empty                                  │
-    │  • Check file size doesn't exceed MAX_FILE_SIZE_MB          │
-    │  • If any validation fails → raise HTTPException with 400   │
-    └────────────────────────────────────────────────────────────┘
-    
-    ┌─ STEP 2: Extract Text from File ──────────────────────────┐
-    │  • Calls: extract_text_from_bytes(data, filename)          │
-    │  • Routes to correct extractor based on file type          │
-    │  • PDF → Uses PyMuPDF to read each page                    │
-    │  • TXT/MD → Decodes as UTF-8 text                         │
-    │  • Returns: Raw text string from the file                  │
-    │  • If fails → raise HTTPException with 400/500            │
-    └────────────────────────────────────────────────────────────┘
-    
-    ┌─ STEP 3: Send to Google Gemini AI ─────────────────────────┐
-    │  • Get GOOGLE_API_KEY from .env file                       │
-    │  • Create GeminiPipelineController instance                │
-    │  • Build prompt by injecting extracted text                │
-    │  • Send to Gemini API with asyncio.wait_for() wrapper      │
-    │  • TIMEOUT: 45 seconds max (prevents hanging)              │
-    │  • Returns: Raw JSON response from Gemini                  │
-    │  • If fails → raise HTTPException with 429/504/500         │
-    └────────────────────────────────────────────────────────────┘
-    
-    ┌─ STEP 4: Validate & Normalize Response ────────────────────┐
-    │  • Calls: sanitize_model_output(raw_response)              │
-    │  • Extracts JSON block from response                       │
-    │  • Validates JSON structure (must be array)                │
-    │  • For each event:                                         │
-    │    - Normalizes dates to YYYY-MM-DD format                │
-    │    - Normalizes times to HH:MM format (24-hour)           │
-    │    - Validates required fields                             │
-    │  • Returns: List of clean, normalized event dicts          │
-    │  • If fails → raise HTTPException with 422                │
-    └────────────────────────────────────────────────────────────┘
-    
-    ┌─ STEP 5: Return to Frontend ───────────────────────────────┐
-    │  • Returns JSONResponse with:                              │
-    │    - "events": List of extracted & normalized events       │
-    │    - "count": Number of events extracted                   │
-    │  • Frontend receives this JSON and displays events         │
-    └────────────────────────────────────────────────────────────┘
+    OUTPUT: A text/event-stream (Server-Sent Events) response. The frontend
+            reads this incrementally so it can show real, live status instead
+            of a simulated progress bar. Events emitted, in order:
+
+              event: phase  data: {"phase": "extract"|"ai"|"validate", "status": "start"|"done", "message": "..."}
+              event: error  data: {"phase": "...", "detail": "..."}   (stream ends here)
+              event: result data: {"events": [...], "count": N}       (final message)
+
+    File validation (type/size/empty) happens BEFORE the stream opens, so
+    those failures can still be plain HTTP 400s. Once streaming starts the
+    HTTP status is locked at 200, so every failure after that point must be
+    signaled in-band as an "error" event rather than an HTTP error code.
     """
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # STEP 1: Read and validate the uploaded file
-    # ─────────────────────────────────────────────────────────────────────────
     filename = file.filename or "upload"
     suffix = _file_suffix(filename)
-
-    # Validate file type
-    if suffix not in SUPPORTED_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported file type '{suffix}'. Upload a PDF, TXT, or MD file.",
-        )
-
-    # Read file into memory (never written to disk for security)
     data = await file.read()
+    _validate_upload(filename, suffix, data)
 
-    # Validate file is not empty
-    if not data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The uploaded file is empty.",
-        )
+    async def event_stream():
+        def sse(event: str, payload: dict[str, Any]) -> str:
+            return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
-    # Validate file size doesn't exceed limit
-    size_mb = len(data) / (1024 * 1024)
-    if size_mb > MAX_FILE_SIZE_MB:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File too large ({size_mb:.1f} MB). Maximum allowed is {MAX_FILE_SIZE_MB} MB.",
-        )
+        try:
+            # ── Phase 1: extract text from the uploaded file ──────────────
+            yield sse("phase", {"phase": "extract", "status": "start", "message": "Extracting text from your file..."})
+            try:
+                raw_text = await asyncio.to_thread(extract_text_from_bytes, data, filename)
+            except ValueError as exc:
+                yield sse("error", {"phase": "extract", "detail": str(exc)})
+                return
+            except ImportError as exc:
+                yield sse("error", {"phase": "extract", "detail": str(exc)})
+                return
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # STEP 2: Extract text from uploaded file
-    # ─────────────────────────────────────────────────────────────────────────
-    # This calls src/ingest/file_ingestor.py
-    # For PDF: Uses PyMuPDF to read each page and extract text
-    # For TXT/MD: Decodes as UTF-8 string
-    try:
-        raw_text = extract_text_from_bytes(data, filename)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    except ImportError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
-        )
+            if not raw_text.strip():
+                yield sse("error", {
+                    "phase": "extract",
+                    "detail": (
+                        "No readable text could be extracted. "
+                        "If this is a scanned PDF (image-only), the tool cannot process it yet."
+                    ),
+                })
+                return
+            yield sse("phase", {"phase": "extract", "status": "done", "message": f"Extracted {len(raw_text)} characters"})
 
-    # Validate we actually extracted text
-    if not raw_text.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "No readable text could be extracted. "
-                "If this is a scanned PDF (image-only), the tool cannot process it yet."
-            ),
-        )
+            # ── Phase 2: send extracted text to Google Gemini AI ──────────
+            yield sse("phase", {"phase": "ai", "status": "start", "message": "Sending to Gemini AI for analysis..."})
+            api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+            if not api_key:
+                yield sse("error", {"phase": "ai", "detail": "Server is missing a Gemini API key. Set GOOGLE_API_KEY on the server."})
+                return
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # STEP 3: Send extracted text to Google Gemini AI
-    # ─────────────────────────────────────────────────────────────────────────
-    # Algorithm: Async wrapper with timeout to prevent hanging
-    # 
-    # Why async? Server can handle multiple requests concurrently
-    # Why timeout? Gemini might be slow or overloaded
-    # Max 45 seconds prevents resources from being held too long
-    
-    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server is missing a Gemini API key. Set GOOGLE_API_KEY on the server.",
-        )
+            model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
+            controller = GeminiPipelineController(api_key=api_key, model=model)
+            try:
+                raw_response = await asyncio.wait_for(
+                    asyncio.to_thread(controller.generate, raw_text),
+                    timeout=45.0,
+                )
+            except asyncio.TimeoutError:
+                yield sse("error", {"phase": "ai", "detail": "AI processing took too long (>45 seconds). The API might be overloaded. Try again in a moment."})
+                return
+            except Exception as exc:
+                yield sse("error", {"phase": "ai", "detail": _describe_gemini_error(exc)})
+                return
 
-    controller = GeminiPipelineController(api_key=api_key)
-    try:
-        # asyncio.wait_for(): Enforce 45-second timeout on API call
-        # asyncio.to_thread(): Run blocking Gemini API in thread pool
-        # This keeps the main event loop responsive to other requests
-        raw_response = await asyncio.wait_for(
-            asyncio.to_thread(controller.generate, raw_text),
-            timeout=45.0
-        )
-        
-        # Verify Gemini actually returned something
-        if not raw_response.strip():
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Gemini returned an empty response. Try a cleaner syllabus document.",
-            )
-    except asyncio.TimeoutError:
-        # Timeout exception when Gemini takes too long
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="AI processing took too long (>45 seconds). The API might be overloaded. Try again in a moment.",
-        )
-    except Exception as exc:
-        # All other exceptions get mapped to appropriate HTTP errors
-        _handle_gemini_error(exc)
+            if not raw_response.strip():
+                yield sse("error", {"phase": "ai", "detail": "Gemini returned an empty response. Try a cleaner syllabus document."})
+                return
+            yield sse("phase", {"phase": "ai", "status": "done", "message": "AI analysis complete"})
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # STEP 4: Validate and normalize the AI response
-    # ─────────────────────────────────────────────────────────────────────────
-    # This calls src/validation/string_validator.py
-    # Algorithm:
-    #  1. Extract JSON block from Gemini response (might have extra text)
-    #  2. Parse as JSON array
-    #  3. For each event, validate required fields
-    #  4. Normalize dates: any format → YYYY-MM-DD
-    #  5. Normalize times: any format → HH:MM (24-hour)
-    try:
-        events: list[dict[str, Any]] = sanitize_model_output(raw_response)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                f"Could not parse the AI response into calendar events: {exc}. "
-                "Try uploading a cleaner syllabus document."
-            ),
-        )
+            # ── Phase 3: validate and normalize the AI response ────────────
+            yield sse("phase", {"phase": "validate", "status": "start", "message": "Validating extracted data..."})
+            try:
+                events: list[dict[str, Any]] = sanitize_model_output(raw_response)
+            except ValueError as exc:
+                yield sse("error", {
+                    "phase": "validate",
+                    "detail": f"Could not parse the AI response into calendar events: {exc}. Try uploading a cleaner syllabus document.",
+                })
+                return
+            incomplete_count = sum(1 for e in events if e.get("incomplete"))
+            done_message = f"{len(events)} event(s) found"
+            if incomplete_count:
+                done_message += f" ({incomplete_count} need review)"
+            yield sse("phase", {"phase": "validate", "status": "done", "message": done_message})
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # STEP 5: Return successful response to frontend
-    # ─────────────────────────────────────────────────────────────────────────
-    return JSONResponse(content={"events": events, "count": len(events)})
+            # ── Final result ────────────────────────────────────────────────
+            yield sse("result", {"events": events, "count": len(events)})
+        except Exception as exc:
+            yield sse("error", {"phase": "unknown", "detail": f"Unexpected server error: {type(exc).__name__}: {exc}"})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +334,116 @@ async def download_ics(request: Request) -> PlainTextResponse:
 
 
 # ---------------------------------------------------------------------------
+# Google Calendar OAuth + push
+# ---------------------------------------------------------------------------
+# Lets the user push extracted events directly into a dedicated "Syllabus
+# Deadlines" Google Calendar instead of manually importing an .ics file.
+# Requires a one-time manual setup step in Google Cloud Console — see
+# src/calendar_push/google_calendar_client.py for details. Until that's done,
+# these routes return a 501 pointing at what's missing.
+
+@app.get("/auth/google/login")
+async def google_login() -> RedirectResponse:
+    """Redirect the browser into Google's OAuth consent screen."""
+    try:
+        auth_url = gcal.build_authorization_url()
+    except gcal.GoogleCalendarNotConfigured as exc:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc))
+    return RedirectResponse(auth_url)
+
+
+@app.get("/auth/google/callback")
+async def google_callback(request: Request) -> HTMLResponse:
+    """OAuth redirect target — exchanges the auth code for tokens.
+
+    Renders a tiny page that posts a message back to the window that opened
+    it (the main app, waiting in a popup-listener) and then closes itself.
+    """
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    error = request.query_params.get("error")
+
+    if error:
+        detail = f"Google sign-in was cancelled or failed: {error}"
+        return _auth_result_page(success=False, detail=detail)
+
+    if not code or not state:
+        return _auth_result_page(success=False, detail="Missing code/state in Google's redirect.")
+
+    try:
+        gcal.exchange_code_for_token(code=code, state=state)
+    except Exception as exc:
+        return _auth_result_page(success=False, detail=str(exc))
+
+    return _auth_result_page(success=True, detail="")
+
+
+@app.get("/auth/google/status")
+async def google_status() -> dict[str, bool]:
+    return {"connected": gcal.is_connected()}
+
+
+@app.post("/auth/google/logout")
+async def google_logout() -> dict[str, bool]:
+    gcal.disconnect()
+    return {"connected": False}
+
+
+@app.post("/calendar/google/push")
+async def calendar_google_push(request: Request) -> JSONResponse:
+    """Push a JSON body of events into the dedicated Google Calendar.
+
+    Request body: {"events": [ {...}, ... ]}
+    Response: {"created": N, "failed": [...], "calendar_html_link": "..."}
+    """
+    body = await request.json()
+    events: list[dict[str, Any]] = body.get("events", [])
+    if not events:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No events provided.")
+
+    if not gcal.is_connected():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google Calendar isn't connected yet. Sign in first.",
+        )
+
+    try:
+        result = await asyncio.to_thread(gcal.push_events, events)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to push events to Google Calendar: {exc}",
+        )
+
+    return JSONResponse(content=result)
+
+
+def _auth_result_page(success: bool, detail: str) -> HTMLResponse:
+    message_type = "google-auth-success" if success else "google-auth-error"
+    heading = "Connected!" if success else "Sign-in failed"
+    body_text = "You can close this window." if success else detail
+    payload = json.dumps({"type": message_type, "detail": detail})
+    html = f"""<!DOCTYPE html>
+<html><head><title>{heading}</title></head>
+<body style="font-family: sans-serif; text-align: center; padding: 60px 20px;">
+  <h2>{heading}</h2>
+  <p>{body_text}</p>
+  <script>
+    // Target origin is '*' because the opener may be a local file:// page
+    // (origin "null"), which postMessage can't address directly. The
+    // message carries no secrets (the token exchange already happened
+    // server-side) — the listener on the receiving end checks
+    // evt.origin === 'http://localhost:8000' to confirm it came from us.
+    if (window.opener) {{
+      window.opener.postMessage({payload}, '*');
+    }}
+    setTimeout(function() {{ window.close(); }}, 1500);
+  </script>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+# ---------------------------------------------------------------------------
 # Global error handler for unexpected exceptions
 # ---------------------------------------------------------------------------
 
@@ -428,18 +464,43 @@ def _file_suffix(filename: str) -> str:
     return Path(filename).suffix.lower()
 
 
-def _handle_gemini_error(exc: Exception) -> None:
-    """Translate Gemini SDK exceptions into appropriate HTTP errors."""
+def _validate_upload(filename: str, suffix: str, data: bytes) -> None:
+    """Validate an uploaded file's type, size, and non-emptiness.
+
+    Raises HTTPException(400) on any failure. Must run before a streaming
+    response opens, since HTTP status codes can't change once streaming starts.
+    """
+    if suffix not in SUPPORTED_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type '{suffix}'. Upload a PDF, TXT, or MD file.",
+        )
+
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded file is empty.",
+        )
+
+    size_mb = len(data) / (1024 * 1024)
+    if size_mb > MAX_FILE_SIZE_MB:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File too large ({size_mb:.1f} MB). Maximum allowed is {MAX_FILE_SIZE_MB} MB.",
+        )
+
+
+def _describe_gemini_error(exc: Exception) -> str:
+    """Translate a Gemini SDK exception into a user-facing message string.
+
+    Used inside the /process SSE stream, where the HTTP status is already
+    committed to 200 by the time errors can occur, so they travel as an
+    in-band "error" event instead of an HTTPException.
+    """
     msg = str(exc).lower()
     if "429" in msg or "quota" in msg or "rate" in msg:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=(
-                "The AI service is busy (rate limit reached). "
-                "Please wait a moment and try again."
-            ),
+        return (
+            "The AI service is busy or its quota is exhausted (429). "
+            "Please wait a moment and try again, or check the API key's quota in Google Cloud Console."
         )
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=f"Gemini API error: {exc}",
-    )
+    return f"Gemini API error: {exc}"

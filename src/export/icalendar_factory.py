@@ -53,11 +53,17 @@ def build_ics(
     now_stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     for event in events:
-        date_value = event["due_date"]
-        time_value = event.get("due_time", "23:59")
+        date_value = event.get("due_date", "")
+        time_value = event.get("due_time") or "23:59"
 
-        # Combine date and time into a single datetime for consistent formatting
-        start_dt = datetime.strptime(f"{date_value} {time_value}", "%Y-%m-%d %H:%M")
+        # Combine date and time into a single datetime for consistent formatting.
+        # Skip (rather than abort the whole export) events with a missing or
+        # unparseable date -- e.g. one left blank during manual entry -- so
+        # the rest of a batch still downloads successfully.
+        try:
+            start_dt = datetime.strptime(f"{date_value} {time_value}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            continue
 
         # iCalendar local-time format (no Z suffix) — avoids timezone conversion issues
         start_stamp = start_dt.strftime("%Y%m%dT%H%M%S")

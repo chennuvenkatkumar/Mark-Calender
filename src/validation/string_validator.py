@@ -19,8 +19,15 @@ def sanitize_model_output(raw_text: str) -> list[dict[str, Any]]:
     normalises each event dict so downstream code always receives clean,
     consistently-formatted data.
 
-    Returns a list of normalised event dicts.
-    Raises ValueError for empty output, non-array JSON, or malformed events.
+    A single event with missing/unparseable fields (a garbled course name,
+    a date the model couldn't express cleanly) does NOT fail the whole
+    batch — it's flagged `incomplete: True` instead, so the user can fix it
+    by hand on the Review step. Only structurally broken output (not a JSON
+    array, or an array element that isn't even an object) raises, since
+    there's no reasonable per-event data to recover in that case.
+
+    Returns a list of normalised event dicts (each with an `incomplete` flag).
+    Raises ValueError for empty output, non-array JSON, or non-object elements.
 
     Usage:
         events = sanitize_model_output(gemini_raw_response)
@@ -98,28 +105,30 @@ def _extract_json_block(raw_text: str) -> str:
     raise ValueError("Unable to isolate a complete JSON payload.")
 
 
-def _normalize_event(item: dict[str, Any], index: int) -> dict[str, str]:
+def _normalize_event(item: dict[str, Any], index: int) -> dict[str, Any]:
     """Normalise a single raw event dict from the Gemini response.
 
     Coerces all field values to strings, strips whitespace, and delegates
-    date/time normalisation to the dedicated helpers.  Validates that the
-    mandatory fields `course_name` and `task_name` are non-empty.
+    date/time normalisation to the dedicated helpers. Unlike a strict
+    validator, this never raises on missing/malformed data — a single badly
+    extracted event (a course a model garbled, a date it couldn't parse)
+    shouldn't sink the whole batch. Instead, missing/unparseable fields are
+    left blank and the event is flagged `incomplete: True` so the frontend's
+    Review step can surface it for the user to fill in by hand.
 
     Returns a dict with keys: course_name, task_name, due_date, due_time,
-    description — all as plain strings.
+    description, incomplete.
     """
 
     course_name = str(item.get("course_name", "")).strip()
     task_name = str(item.get("task_name", "")).strip()
-    due_date = _normalize_date(str(item.get("due_date", "")).strip())
+    due_date = _try_normalize_date(str(item.get("due_date", "")).strip())
     due_time = _normalize_time(str(item.get("due_time", "")).strip())
     description = str(item.get("description", "")).strip()
 
-    # Both identity fields are required; reject events missing either one
-    if not course_name:
-        raise ValueError(f"Event #{index} is missing course_name.")
-    if not task_name:
-        raise ValueError(f"Event #{index} is missing task_name.")
+    # Flag before filling in placeholders, so a missing field is still
+    # reported even though the event gets a friendly default to display.
+    incomplete = not course_name or not task_name or not due_date
 
     return {
         "course_name": course_name,
@@ -127,6 +136,7 @@ def _normalize_event(item: dict[str, Any], index: int) -> dict[str, str]:
         "due_date": due_date,
         "due_time": due_time,
         "description": description,
+        "incomplete": incomplete,
     }
 
 
@@ -159,6 +169,20 @@ def _normalize_date(value: str) -> str:
         except ValueError:
             continue
     raise ValueError(f"Unsupported due_date format: {value}")
+
+
+def _try_normalize_date(value: str) -> str:
+    """Best-effort version of _normalize_date used by the main pipeline.
+
+    Returns "" instead of raising when the date is missing or in a format
+    none of the candidates match, so one ill-formed date doesn't abort the
+    whole batch — the event is flagged incomplete instead and the user can
+    fill in the date by hand on the Review step.
+    """
+    try:
+        return _normalize_date(value)
+    except ValueError:
+        return ""
 
 
 def _normalize_time(value: str) -> str:

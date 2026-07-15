@@ -7,397 +7,449 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+
+        html, body { height: 100%; }
+
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-color: #fafafa;
+            background-image: radial-gradient(circle, #e5e7eb 1px, transparent 1px);
+            background-size: 22px 22px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+            color: #111827;
             min-height: 100vh;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
 
-        .glass {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Consolas, monospace;
         }
 
+        .panel {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+        }
+
+        /* ---- Step indicator ---- */
         .step-indicator {
             position: relative;
             display: flex;
             justify-content: space-between;
-            margin-bottom: 40px;
+            margin-bottom: 32px;
         }
 
-        .step-item {
-            flex: 1;
-            text-align: center;
-            position: relative;
-        }
+        .step-item { flex: 1; text-align: center; position: relative; }
 
         .step-circle {
-            width: 50px;
-            height: 50px;
-            margin: 0 auto 15px;
-            border-radius: 50%;
+            width: 38px;
+            height: 38px;
+            margin: 0 auto 8px;
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: bold;
-            font-size: 20px;
-            transition: all 0.3s ease;
-            border: 3px solid #e0e0e0;
+            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.18s ease;
+            border: 1.5px solid #d1d5db;
             background: white;
+            color: #9ca3af;
         }
 
         .step-item.active .step-circle {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-color: #667eea;
-            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-            transform: scale(1.1);
+            border-color: #4f46e5;
+            color: #4f46e5;
+            background: #eef2ff;
         }
 
         .step-item.completed .step-circle {
-            background: #10b981;
+            background: #111827;
+            border-color: #111827;
             color: white;
-            border-color: #10b981;
         }
 
-        .step-item.completed .step-circle::after {
-            content: '✓';
-            font-size: 24px;
-        }
+        .step-item.completed .step-circle::after { content: '✓'; font-size: 15px; }
 
         .step-connector {
             position: absolute;
-            top: 25px;
+            top: 19px;
             left: 50%;
             width: 100%;
-            height: 3px;
-            background: #e0e0e0;
+            height: 1.5px;
+            background: #e5e7eb;
             z-index: -1;
+            transition: background 0.18s ease;
         }
 
-        .step-item:last-child .step-connector {
-            display: none;
-        }
-
-        .step-item.completed ~ .step-item .step-connector {
-            background: #10b981;
-        }
+        .step-item:last-child .step-connector { display: none; }
+        .step-item.completed ~ .step-item .step-connector { background: #111827; }
 
         .step-text {
-            font-size: 14px;
-            color: #666;
+            font-size: 11px;
+            color: #9ca3af;
             font-weight: 500;
+            font-family: ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Consolas, monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
         }
 
-        .step-item.active .step-text {
-            color: #667eea;
-            font-weight: 700;
-        }
+        .step-item.active .step-text { color: #4f46e5; font-weight: 700; }
 
-        .section {
-            display: none;
-            animation: fadeIn 0.5s ease-in;
-        }
-
-        .section.active {
-            display: block;
-        }
+        .section { display: none; animation: fadeIn 0.25s ease-out; }
+        .section.active { display: block; }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
+            from { opacity: 0; transform: translateY(6px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
         .upload-zone {
-            border: 3px dashed #667eea;
-            border-radius: 15px;
-            padding: 60px 20px;
+            border: 1.5px dashed #d1d5db;
+            border-radius: 10px;
+            padding: 40px 20px;
             text-align: center;
             cursor: pointer;
-            transition: all 0.3s ease;
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+            transition: border-color 0.15s ease, background-color 0.15s ease;
         }
 
-        .upload-zone:hover,
-        .upload-zone.dragover {
-            border-color: #764ba2;
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.2);
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #4f46e5;
+            background-color: #f5f5ff;
         }
 
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: #e0e0e0;
-            border-radius: 10px;
-            overflow: hidden;
-            margin: 15px 0;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            width: 0%;
-            transition: width 0.3s ease;
-            border-radius: 10px;
-        }
-
+        /* ---- Event cards (compact) ---- */
         .event-card {
             background: white;
-            border-left: 5px solid #667eea;
-            padding: 20px;
-            margin-bottom: 15px;
+            border: 1px solid #e5e7eb;
             border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            transition: all 0.3s ease;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            transition: border-color 0.15s ease;
         }
 
-        .event-card:hover {
-            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-            transform: translateX(5px);
+        .event-card:hover { border-color: #c7c9d1; }
+
+        .event-card.incomplete { border-color: #f59e0b; background: #fffbeb; }
+
+        .incomplete-tag {
+            font-family: ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Consolas, monospace;
+            font-size: 10px;
+            font-weight: 700;
+            color: #b45309;
+            background: #fef3c7;
+            border-radius: 5px;
+            padding: 2px 6px;
+            margin-left: 8px;
         }
 
-        .event-card input,
-        .event-card textarea {
-            border: 1px solid #e0e0e0;
+        .field-label {
+            display: block;
+            font-family: ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Consolas, monospace;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #9ca3af;
+            margin-bottom: 3px;
+        }
+
+        .event-field-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .event-field { margin-bottom: 8px; }
+
+        .event-card input, .event-card textarea {
+            border: 1px solid #e5e7eb;
             border-radius: 6px;
-            padding: 8px 12px;
-            font-size: 14px;
-            margin: 5px 0;
+            padding: 6px 10px;
+            font-size: 13px;
             width: 100%;
             font-family: inherit;
+            transition: border-color 0.15s ease;
         }
 
-        .event-card input:focus,
-        .event-card textarea:focus {
+        .event-card input:focus, .event-card textarea:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: #4f46e5;
         }
+
+        .event-card textarea { min-height: 42px; resize: vertical; }
 
         .btn {
-            padding: 12px 24px;
-            border: none;
+            padding: 9px 18px;
             border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
-            font-size: 15px;
+            transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+            font-size: 13.5px;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            justify-content: center;
+            gap: 7px;
+            border: 1.5px solid transparent;
         }
 
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-primary:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
+        .btn-primary { background: #111827; color: white; }
+        .btn-primary:hover:not(:disabled) { background: #000; }
+        .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
         .btn-secondary {
             background: white;
-            color: #667eea;
-            border: 2px solid #667eea;
+            color: #111827;
+            border-color: #d1d5db;
+            text-decoration: none;
         }
+        .btn-secondary:hover { border-color: #111827; }
 
-        .btn-secondary:hover {
-            background: #667eea;
-            color: white;
-        }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
 
-        .btn-sm {
-            padding: 8px 16px;
-            font-size: 13px;
-        }
+        .btn-danger { background: white; color: #dc2626; border-color: #fecaca; }
+        .btn-danger:hover { background: #fef2f2; border-color: #dc2626; }
 
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #dc2626;
-        }
-
-        .btn-add {
-            background: #10b981;
-            color: white;
-        }
-
-        .btn-add:hover {
-            background: #059669;
-        }
-
-        .status-badge {
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .status-processing {
-            background: #dbeafe;
-            color: #0369a1;
-        }
-
-        .status-success {
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .status-error {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .loading-spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid rgba(102, 126, 234, 0.1);
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        .btn-add { background: white; color: #4b5563; border: 1.5px dashed #d1d5db; }
+        .btn-add:hover { border-color: #111827; color: #111827; }
 
         .status-message {
-            padding: 15px 20px;
+            padding: 12px 16px;
             border-radius: 8px;
-            margin: 15px 0;
+            margin: 12px 0;
             display: none;
-            animation: slideIn 0.3s ease;
+            font-size: 13.5px;
+            border: 1px solid transparent;
         }
 
-        .status-message.show {
-            display: block;
+        .status-message.show { display: block; }
+        .status-success { background: #f0fdf4; color: #166534; border-color: #bbf7d0; }
+        .status-error { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+
+        .global-error {
+            position: relative;
+            display: none;
+            align-items: flex-start;
+            gap: 10px;
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+            border-left: 3px solid #dc2626;
+            padding: 12px 36px 12px 14px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 13.5px;
         }
 
-        @keyframes slideIn {
-            from { transform: translateX(-20px); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+        .global-error.show { display: flex; }
+
+        .global-error .close-btn {
+            position: absolute;
+            top: 8px;
+            right: 10px;
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            color: #991b1b;
+            opacity: 0.6;
         }
+
+        .global-error .close-btn:hover { opacity: 1; }
 
         .summary-stat {
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-            padding: 20px;
-            border-radius: 10px;
+            background: #fafafa;
+            border: 1px solid #e5e7eb;
+            padding: 14px 18px;
+            border-radius: 8px;
             text-align: center;
-            margin: 10px;
+            margin: 0;
         }
 
-        .summary-stat .number {
-            font-size: 32px;
-            font-weight: bold;
-            color: #667eea;
-        }
-
+        .summary-stat .number { font-size: 24px; font-weight: 700; color: #111827; font-family: ui-monospace, monospace; }
         .summary-stat .label {
+            font-size: 10.5px;
+            color: #9ca3af;
+            margin-top: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-family: ui-monospace, monospace;
+        }
+
+        .empty-state { text-align: center; padding: 32px 20px; color: #9ca3af; }
+        .empty-state-icon { font-size: 44px; margin-bottom: 12px; }
+
+        .divider { height: 1px; background: #e5e7eb; margin: 22px 0; }
+
+        /* ---- Processing step: live checklist ---- */
+        .process-steps {
+            max-width: 440px;
+            margin: 6px auto 0;
+            text-align: left;
+        }
+
+        .process-step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 4px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .process-step:last-child { border-bottom: none; }
+
+        .process-step-icon {
+            width: 26px;
+            height: 26px;
+            flex-shrink: 0;
+            border-radius: 7px;
+            border: 1.5px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-family: ui-monospace, monospace;
+            color: #9ca3af;
+            transition: all 0.18s ease;
+        }
+
+        .process-step.active .process-step-icon {
+            border-color: #4f46e5;
+            border-top-color: transparent;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .process-step.done .process-step-icon {
+            border-color: #111827;
+            background: #111827;
+            color: white;
+        }
+
+        .process-step.done .process-step-icon::after { content: '✓'; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .process-step-body { flex: 1; min-width: 0; }
+
+        .process-step-title {
+            font-weight: 600;
+            color: #9ca3af;
             font-size: 14px;
-            color: #666;
-            margin-top: 5px;
+            transition: color 0.18s ease;
         }
 
-        .table-responsive {
-            overflow-x: auto;
+        .process-step.active .process-step-title,
+        .process-step.done .process-step-title { color: #111827; }
+
+        .process-step-message {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 1px;
+            min-height: 15px;
+            font-family: ui-monospace, monospace;
+        }
+
+        .elapsed-timer {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 18px;
+            font-family: ui-monospace, monospace;
+        }
+
+        /* ---- Destination cards (Choose your calendar) ---- */
+        .destination-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin: 18px 0;
+        }
+
+        .dest-card {
+            border: 1.5px solid #e5e7eb;
             border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
+            padding: 18px 14px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
             background: white;
         }
 
-        th {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px;
-            text-align: left;
-            font-weight: 600;
-            font-size: 14px;
+        .dest-card:hover { border-color: #a5a6f6; }
+
+        .dest-card.selected {
+            border-color: #4f46e5;
+            background: #f5f5ff;
         }
 
-        td {
-            padding: 12px 15px;
-            border-bottom: 1px solid #e0e0e0;
+        .dest-icon { font-size: 28px; margin-bottom: 8px; }
+        .dest-title { font-weight: 700; color: #111827; font-size: 14px; margin-bottom: 3px; }
+        .dest-desc { font-size: 11.5px; color: #9ca3af; line-height: 1.4; }
+
+        .dest-panel { margin-top: 6px; }
+
+        .dest-panel-inner {
+            background: #fafafa;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 18px;
+            animation: fadeIn 0.2s ease;
         }
 
-        tr:hover {
-            background: #f9fafb;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: #999;
-        }
-
-        .empty-state-icon {
-            font-size: 64px;
-            margin-bottom: 15px;
-        }
-
-        .divider {
-            height: 1px;
-            background: linear-gradient(90deg, transparent, #e0e0e0, transparent);
-            margin: 30px 0;
-        }
+        .dest-panel-inner p { color: #4b5563; margin-bottom: 10px; line-height: 1.5; font-size: 13.5px; }
+        .dest-panel-inner .hint { font-size: 11.5px; color: #9ca3af; font-family: ui-monospace, monospace; }
     </style>
 </head>
 <body>
-    <div class="min-h-screen py-8 px-4">
-        <div class="max-w-4xl mx-auto">
-            <!-- Header -->
-            <div class="text-center mb-12 text-white">
-                <h1 class="text-5xl font-bold mb-3">📅 Syllabus to Calendar</h1>
-                <p class="text-xl opacity-90">Extract deadlines from your syllabus in seconds</p>
+    <div class="min-h-screen py-10 px-4">
+        <div class="max-w-3xl mx-auto">
+            <div class="mb-8">
+                <div class="mono" style="font-size: 11px; letter-spacing: 0.12em; color: #9ca3af; text-transform: uppercase; margin-bottom: 8px;">
+                    syllabus → calendar
+                </div>
+                <h1 style="font-size: 26px; font-weight: 700; color: #111827; letter-spacing: -0.01em;">
+                    Extract deadlines from any syllabus
+                </h1>
+                <p style="color: #6b7280; font-size: 14px; margin-top: 6px;">
+                    Upload a PDF or text file — Gemini finds the dates, you choose where they go.
+                </p>
             </div>
 
-            <!-- Main Card -->
-            <div class="glass rounded-20 p-8 shadow-2xl">
-                
-                <!-- Step Indicator -->
+            <div class="panel p-8">
+
                 <div class="step-indicator">
                     <div class="step-item active" data-step="1">
                         <div class="step-connector"></div>
-                        <div class="step-circle">1</div>
+                        <div class="step-circle">01</div>
                         <div class="step-text">Upload</div>
                     </div>
                     <div class="step-item" data-step="2">
                         <div class="step-connector"></div>
-                        <div class="step-circle">2</div>
-                        <div class="step-text">Processing</div>
+                        <div class="step-circle">02</div>
+                        <div class="step-text">Process</div>
                     </div>
                     <div class="step-item" data-step="3">
                         <div class="step-connector"></div>
-                        <div class="step-circle">3</div>
+                        <div class="step-circle">03</div>
                         <div class="step-text">Review</div>
                     </div>
                     <div class="step-item" data-step="4">
                         <div class="step-connector"></div>
-                        <div class="step-circle">4</div>
-                        <div class="step-text">Download</div>
+                        <div class="step-circle">04</div>
+                        <div class="step-text">Calendar</div>
                     </div>
+                    <div class="step-item" data-step="5">
+                        <div class="step-connector"></div>
+                        <div class="step-circle">05</div>
+                        <div class="step-text">Done</div>
+                    </div>
+                </div>
+
+                <div id="globalError" class="global-error">
+                    <div style="font-size:16px;">⚠</div>
+                    <div>
+                        <div class="error-text" style="font-weight:600;"></div>
+                        <div class="error-hint" style="font-size:12px; margin-top:3px; opacity:0.85;"></div>
+                    </div>
+                    <button class="close-btn" onclick="dismissError()">&times;</button>
                 </div>
 
                 <div class="divider"></div>
@@ -405,157 +457,184 @@
                 <!-- Step 1: Upload -->
                 <div class="section active" id="step-1">
                     <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
-                        <div style="font-size: 48px; margin-bottom: 15px;">📄</div>
-                        <p style="font-size: 18px; font-weight: bold; color: #333; margin-bottom: 8px;">
+                        <div style="font-size: 34px; margin-bottom: 12px;">📄</div>
+                        <p style="font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 6px;">
                             Click to upload or drag & drop
                         </p>
-                        <p style="color: #999; font-size: 14px;">
-                            PDF, TXT, or MD files (max 20 MB)
+                        <p class="mono" style="color: #9ca3af; font-size: 12px;">
+                            .pdf · .txt · .md — max 20 MB
                         </p>
                     </div>
                     <input type="file" id="fileInput" accept=".pdf,.txt,.md" style="display: none;" onchange="handleFileSelect(event)">
-                    
-                    <div style="margin-top: 20px; text-align: center;">
+
+                    <div style="margin-top: 16px; text-align: center;">
                         <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
-                            📁 Choose File
+                            Choose file
+                        </button>
+                    </div>
+
+                    <div style="display:flex; align-items:center; gap:12px; margin: 22px 0 16px;">
+                        <div style="flex:1; height:1px; background:#e5e7eb;"></div>
+                        <span class="mono" style="font-size:11px; color:#9ca3af;">or</span>
+                        <div style="flex:1; height:1px; background:#e5e7eb;"></div>
+                    </div>
+
+                    <div style="text-align: center;">
+                        <button class="btn btn-secondary btn-sm" onclick="startManualEntry()">
+                            + Add an event manually
                         </button>
                     </div>
                 </div>
 
-                <!-- Step 2: Processing -->
+                <!-- Step 2: Processing (real, SSE-driven status) -->
                 <div class="section" id="step-2">
-                    <div style="text-align: center; padding: 40px 20px;">
-                        <div class="loading-spinner"></div>
-                        <h3 style="font-size: 20px; font-weight: bold; color: #333; margin: 20px 0;">
-                            Processing your syllabus...
+                    <div style="text-align: center; padding: 10px 10px 6px;">
+                        <h3 style="font-size: 16px; font-weight: 700; color: #111827;">
+                            Processing <span id="processingFile" class="mono" style="color:#4f46e5;"></span>
                         </h3>
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="processingProgress" style="width: 0%;"></div>
-                        </div>
-                        <p style="color: #999; margin-top: 15px; font-size: 14px;">
-                            <span id="processingStatus">Uploading file...</span>
-                        </p>
-                        <div style="margin-top: 30px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-                            <div class="summary-stat">
-                                <div class="label">Step</div>
-                                <div class="number"><span id="currentStep">1</span>/4</div>
+                        <div class="process-steps">
+                            <div class="process-step" data-phase="extract">
+                                <div class="process-step-icon">1</div>
+                                <div class="process-step-body">
+                                    <div class="process-step-title">Extracting text</div>
+                                    <div class="process-step-message"></div>
+                                </div>
                             </div>
-                            <div class="summary-stat">
-                                <div class="label">File</div>
-                                <div class="number" id="fileName" style="font-size: 16px;">-</div>
+                            <div class="process-step" data-phase="ai">
+                                <div class="process-step-icon">2</div>
+                                <div class="process-step-body">
+                                    <div class="process-step-title">Analyzing with Gemini AI</div>
+                                    <div class="process-step-message"></div>
+                                </div>
+                            </div>
+                            <div class="process-step" data-phase="validate">
+                                <div class="process-step-icon">3</div>
+                                <div class="process-step-body">
+                                    <div class="process-step-title">Validating &amp; normalizing</div>
+                                    <div class="process-step-message"></div>
+                                </div>
                             </div>
                         </div>
+                        <div class="elapsed-timer">elapsed: <span id="elapsedTime">0.0s</span></div>
                     </div>
                 </div>
 
                 <!-- Step 3: Review Events -->
                 <div class="section" id="step-3">
-                    <h2 style="font-size: 24px; font-weight: bold; color: #333; margin-bottom: 10px;">
-                        📋 Review Extracted Events
+                    <h2 style="font-size: 19px; font-weight: 700; color: #111827; margin-bottom: 6px;">
+                        Review extracted events
                     </h2>
-                    <p style="color: #666; margin-bottom: 20px; font-size: 14px;">
-                        Check, edit, or remove events before downloading. You can modify any details.
+                    <p style="color: #6b7280; margin-bottom: 16px; font-size: 13px;">
+                        Check, edit, or remove events before choosing where to mark them.
                     </p>
 
-                    <div id="statusMessage" class="status-message"></div>
-
-                    <div style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px;">
                         <div class="summary-stat">
-                            <div class="label">Total Events</div>
+                            <div class="label">Total events</div>
                             <div class="number" id="eventCount">0</div>
                         </div>
                         <div class="summary-stat">
-                            <div class="label">Course Name</div>
-                            <div class="number" id="courseName" style="font-size: 14px;">-</div>
+                            <div class="label">Course name</div>
+                            <div class="number" id="courseName" style="font-size: 15px;">-</div>
                         </div>
                     </div>
 
-                    <div id="eventsList" style="margin-bottom: 30px;">
-                        <!-- Events will be populated here -->
-                    </div>
+                    <div id="eventsList" style="margin-bottom: 20px;"></div>
 
-                    <button class="btn btn-add" onclick="addNewEvent()" style="margin-bottom: 20px; width: 100%;">
-                        ➕ Add New Event
+                    <button class="btn btn-add" onclick="addNewEvent()" style="margin-bottom: 18px; width: 100%;">
+                        + Add event
                     </button>
 
-                    <div style="display: flex; gap: 10px; margin-top: 30px;">
+                    <div id="incompleteWarning" class="mono" style="display:none; font-size:12px; color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:8px 12px; margin-bottom:12px;"></div>
+
+                    <div style="display: flex; gap: 10px; margin-top: 24px;">
                         <button class="btn btn-secondary" onclick="goToStep(1)" style="flex: 1;">
-                            ← Back to Upload
+                            ← Back
                         </button>
-                        <button class="btn btn-primary" onclick="goToStep(4)" style="flex: 1;">
-                            Continue to Download →
+                        <button class="btn btn-primary" id="continueToCalendarBtn" onclick="goToStep(4)" style="flex: 1;">
+                            Choose calendar →
                         </button>
                     </div>
                 </div>
 
-                <!-- Step 4: Download -->
+                <!-- Step 4: Choose your calendar -->
                 <div class="section" id="step-4">
-                    <div style="text-align: center; padding: 40px 20px;">
-                        <div style="font-size: 64px; margin-bottom: 20px;">✅</div>
-                        <h2 style="font-size: 28px; font-weight: bold; color: #10b981; margin-bottom: 10px;">
-                            All Set!
+                    <h2 style="font-size: 19px; font-weight: 700; color: #111827; margin-bottom: 6px;">
+                        Choose your calendar
+                    </h2>
+                    <p style="color: #6b7280; margin-bottom: 4px; font-size: 13px;">
+                        Where would you like these <span id="destEventCount" class="mono">0</span> events marked?
+                    </p>
+
+                    <div class="destination-grid">
+                        <div class="dest-card" data-dest="google" onclick="selectDestination('google')">
+                            <div class="dest-icon">🟦</div>
+                            <div class="dest-title">Google Calendar</div>
+                            <div class="dest-desc">Pushed directly via your account — no file needed.</div>
+                        </div>
+                        <div class="dest-card" data-dest="apple" onclick="selectDestination('apple')">
+                            <div class="dest-icon">🍎</div>
+                            <div class="dest-title">Apple Calendar</div>
+                            <div class="dest-desc">Download a file that opens straight into Calendar.</div>
+                        </div>
+                        <div class="dest-card" data-dest="device" onclick="selectDestination('device')">
+                            <div class="dest-icon">💻</div>
+                            <div class="dest-title">Device / Other</div>
+                            <div class="dest-desc">Universal .ics file for Outlook, Yahoo, and more.</div>
+                        </div>
+                    </div>
+
+                    <div id="destPanel" class="dest-panel"></div>
+
+                    <div style="margin-top: 18px;">
+                        <button class="btn btn-secondary" onclick="goToStep(3)">← Back to review</button>
+                    </div>
+                </div>
+
+                <!-- Step 5: Done -->
+                <div class="section" id="step-5">
+                    <div style="text-align: center; padding: 28px 20px;">
+                        <div id="doneIcon" style="font-size: 44px; margin-bottom: 14px;">✅</div>
+                        <h2 id="doneHeading" style="font-size: 21px; font-weight: 700; color: #111827; margin-bottom: 8px;">
+                            All set!
                         </h2>
-                        <p style="color: #666; font-size: 16px; margin-bottom: 30px;">
-                            Your calendar is ready. Download the .ics file to import into any calendar app.
-                        </p>
+                        <p id="doneSubtext" style="color: #6b7280; font-size: 14px; margin-bottom: 20px;"></p>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; max-width: 500px; margin-left: auto; margin-right: auto;">
-                            <div class="summary-stat">
-                                <div class="label">Events Ready</div>
-                                <div class="number" id="finalEventCount">0</div>
-                            </div>
-                            <div class="summary-stat">
-                                <div class="label">File Type</div>
-                                <div class="number" style="font-size: 18px;">📅 .ics</div>
-                            </div>
-                        </div>
+                        <div id="doneExtra" style="display:flex; flex-direction:column; gap:10px; max-width:320px; margin:0 auto 20px;"></div>
 
-                        <div style="background: #eff6ff; border-left: 4px solid #0369a1; padding: 15px; border-radius: 8px; margin-bottom: 30px; text-align: left;">
-                            <p style="font-weight: 600; color: #0369a1; margin-bottom: 8px;">📌 How to use:</p>
-                            <ul style="color: #666; font-size: 14px; line-height: 1.8;">
-                                <li>✓ Download the file below</li>
-                                <li>✓ Open Google Calendar / Outlook / Apple Calendar</li>
-                                <li>✓ Click "Import" or "Add calendar from file"</li>
-                                <li>✓ Select the downloaded .ics file</li>
-                                <li>✓ All events appear in your calendar!</li>
-                            </ul>
-                        </div>
-
-                        <button class="btn btn-primary" onclick="downloadCalendar()" style="width: 100%; padding: 16px; font-size: 16px; margin-bottom: 15px;">
-                            ⬇️ Download Calendar File
-                        </button>
-
-                        <button class="btn btn-secondary" onclick="goToStep(1)" style="width: 100%; padding: 14px;">
-                            📤 Process Another Syllabus
+                        <button class="btn btn-secondary" style="width: 100%; padding: 12px;" onclick="resetToUpload()">
+                            Process another syllabus
                         </button>
                     </div>
                 </div>
             </div>
 
-            <!-- Footer -->
-            <div style="text-align: center; margin-top: 40px; color: rgba(255,255,255,0.8);">
-                <p style="font-size: 14px;">
-                    Made with ❤️ for students | Powered by Google Gemini AI
+            <div style="text-align: center; margin-top: 28px; color: #9ca3af;">
+                <p class="mono" style="font-size: 11.5px;">
+                    powered by google gemini
                 </p>
             </div>
         </div>
     </div>
 
     <script>
+        const TOTAL_STEPS = 5;
+        const API_BASE = 'http://localhost:8000';
+
         let currentEvents = [];
         let uploadedFileName = '';
-        let allStepsData = { course_name: '' };
+        let selectedDestination = null; // 'google' | 'apple' | 'device'
+        let googlePushResult = null;
+        let elapsedTimerId = null;
+        let processStartTime = null;
 
-        // Drag and drop
+        // ---- Drag and drop ----
         const uploadZone = document.querySelector('.upload-zone');
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             uploadZone.addEventListener(eventName, preventDefaults, false);
         });
 
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
+        function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
 
         uploadZone.addEventListener('dragover', () => uploadZone.classList.add('dragover'));
         uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
@@ -572,205 +651,263 @@
 
         function handleFile(file) {
             uploadedFileName = file.name;
-            showProcessing(file);
+            streamProcess(file);
         }
 
-        async function showProcessing(file) {
+        // ---- Step 2: real SSE-driven processing ----
+        async function streamProcess(file) {
+            dismissError();
             goToStep(2);
+            resetProcessSteps();
+            startElapsedTimer();
+
             const formData = new FormData();
             formData.append('file', file);
 
+            let response;
             try {
-                // Simulate progress
-                updateProgress(0, "Reading file...");
-                await new Promise(r => setTimeout(r, 500));
-                
-                updateProgress(25, "Extracting text from PDF...");
-                await new Promise(r => setTimeout(r, 800));
-                
-                updateProgress(50, "Sending to AI for analysis...");
-                await new Promise(r => setTimeout(r, 500));
+                response = await fetch(API_BASE + '/process', { method: 'POST', body: formData });
+            } catch (err) {
+                stopElapsedTimer();
+                showError('Cannot connect to the server at localhost:8000. Is the server running?');
+                goToStep(1);
+                return;
+            }
 
-                // Send to server with 60-second timeout
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 60000);
-                
-                const response = await fetch('http://localhost:8000/process', {
-                    method: 'POST',
-                    body: formData,
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
+            if (!response.ok) {
+                stopElapsedTimer();
+                let detail = `Server error (${response.status}): upload failed`;
+                try {
+                    const data = await response.json();
+                    detail = data.detail || detail;
+                } catch (e) { /* body wasn't JSON */ }
+                showError(detail);
+                goToStep(1);
+                return;
+            }
 
-                updateProgress(75, "Validating extracted data...");
-                await new Promise(r => setTimeout(r, 400));
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    showError(data.detail || `Server error (${response.status}): Upload failed`);
-                    return;
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            try {
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    let sep;
+                    while ((sep = buffer.indexOf('\n\n')) !== -1) {
+                        const rawEvent = buffer.slice(0, sep);
+                        buffer = buffer.slice(sep + 2);
+                        handleSseMessage(rawEvent);
+                    }
                 }
-
-                updateProgress(100, "Done!");
-                currentEvents = data.events || [];
-                allStepsData.course_name = currentEvents.length > 0 ? currentEvents[0].course_name : 'Unknown Course';
-                
-                await new Promise(r => setTimeout(r, 800));
-                goToStep(3);
-
-            } catch (error) {
-                let errorMsg = error.message;
-                if (error.name === 'AbortError') {
-                    errorMsg = 'Request timeout after 60 seconds. The AI service might be overloaded. Try again later.';
-                } else if (!navigator.onLine) {
-                    errorMsg = 'No internet connection. Please check your network.';
-                } else if (error.message.includes('Failed to fetch')) {
-                    errorMsg = 'Cannot connect to the server at localhost:8000. Is the server running?';
-                }
-                showError(errorMsg);
+            } catch (err) {
+                stopElapsedTimer();
+                showError('Connection interrupted while processing: ' + err.message);
                 goToStep(1);
             }
         }
 
-        function updateProgress(percent, status) {
-            document.getElementById('processingProgress').style.width = percent + '%';
-            document.getElementById('processingStatus').textContent = status;
-            document.getElementById('currentStep').textContent = Math.ceil(percent / 25);
-            document.getElementById('fileName').textContent = uploadedFileName.split('.')[0];
+        function resetProcessSteps() {
+            document.querySelectorAll('.process-step').forEach(el => {
+                el.classList.remove('active', 'done');
+                el.querySelector('.process-step-message').textContent = '';
+            });
+            document.getElementById('processingFile').textContent = uploadedFileName;
         }
 
-        function showError(message) {
-            const statusDiv = document.getElementById('statusMessage');
-            statusDiv.className = 'status-message show status-error';
-            
-            // Provide helpful suggestions based on error type
-            let suggestion = '';
-            if (message.includes('rate limit') || message.includes('429')) {
-                suggestion = ' | Tip: Wait 60 seconds and try again';
-            } else if (message.includes('timeout') || message.includes('504')) {
-                suggestion = ' | Tip: The API is busy, try again in a moment';
-            } else if (message.includes('scanned PDF') || message.includes('image')) {
-                suggestion = ' | Tip: Use a text-based PDF, not a scanned image';
-            } else if (message.includes('empty')) {
-                suggestion = ' | Tip: The PDF might be corrupted, try a different file';
+        function handleSseMessage(rawEvent) {
+            let eventType = 'message';
+            let dataLine = '';
+            rawEvent.split('\n').forEach(line => {
+                if (line.startsWith('event:')) eventType = line.slice(6).trim();
+                else if (line.startsWith('data:')) dataLine += line.slice(5).trim();
+            });
+            if (!dataLine) return;
+
+            let payload;
+            try { payload = JSON.parse(dataLine); } catch (e) { return; }
+
+            if (eventType === 'phase') {
+                const el = document.querySelector(`.process-step[data-phase="${payload.phase}"]`);
+                if (!el) return;
+                if (payload.status === 'start') {
+                    el.classList.add('active');
+                } else if (payload.status === 'done') {
+                    el.classList.remove('active');
+                    el.classList.add('done');
+                }
+                el.querySelector('.process-step-message').textContent = payload.message || '';
+            } else if (eventType === 'error') {
+                stopElapsedTimer();
+                showError(payload.detail || 'Something went wrong while processing.');
+                goToStep(1);
+            } else if (eventType === 'result') {
+                stopElapsedTimer();
+                currentEvents = payload.events || [];
+                setTimeout(() => goToStep(3), 500);
             }
-            
-            statusDiv.innerHTML = `
-                <div>❌ ${message}${suggestion}</div>
-                <div style="font-size: 12px; margin-top: 8px; opacity: 0.8;">
-                    Click below to try again
-                </div>
-            `;
-            statusDiv.style.display = 'block';
         }
 
+        function startElapsedTimer() {
+            processStartTime = performance.now();
+            elapsedTimerId = setInterval(() => {
+                const secs = ((performance.now() - processStartTime) / 1000).toFixed(1);
+                document.getElementById('elapsedTime').textContent = secs + 's';
+            }, 100);
+        }
+
+        function stopElapsedTimer() {
+            if (elapsedTimerId) clearInterval(elapsedTimerId);
+            elapsedTimerId = null;
+        }
+
+        // ---- Global error banner ----
+        function showError(message, hint) {
+            const banner = document.getElementById('globalError');
+            banner.querySelector('.error-text').textContent = message;
+            banner.querySelector('.error-hint').textContent = hint || suggestionFor(message);
+            banner.classList.add('show');
+        }
+
+        function dismissError() {
+            document.getElementById('globalError').classList.remove('show');
+        }
+
+        function suggestionFor(message) {
+            if (/rate limit|429|quota/i.test(message)) return 'Tip: wait a moment and try again, or check the API key\'s quota in Google Cloud Console.';
+            if (/timeout|504/i.test(message)) return 'Tip: the AI service is busy — try again shortly.';
+            if (/scanned pdf|image/i.test(message)) return 'Tip: use a text-based PDF, not a scanned image.';
+            if (/empty/i.test(message)) return 'Tip: the file might be corrupted — try a different one.';
+            return '';
+        }
+
+        // ---- Step navigation ----
         function goToStep(step) {
-            // Hide all sections
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.step-item').forEach(s => s.classList.remove('active', 'completed'));
 
-            // Show current section
             document.getElementById('step-' + step).classList.add('active');
 
-            // Update step indicators
-            for (let i = 1; i <= 4; i++) {
+            for (let i = 1; i <= TOTAL_STEPS; i++) {
                 const stepItem = document.querySelector(`[data-step="${i}"]`);
-                if (i < step) {
-                    stepItem.classList.add('completed');
-                } else if (i === step) {
-                    stepItem.classList.add('active');
-                }
+                if (i < step) stepItem.classList.add('completed');
+                else if (i === step) stepItem.classList.add('active');
             }
 
-            // Populate review step
-            if (step === 3) {
-                populateEvents();
-            }
-
-            // Populate download step
-            if (step === 4) {
-                document.getElementById('finalEventCount').textContent = currentEvents.length;
-            }
+            if (step === 3) populateEvents();
+            if (step === 4) prepareDestinationStep();
+            if (step === 5) prepareDoneStep();
 
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // ---- Step 3: Review ----
+        function isEventIncomplete(event) {
+            return !((event.course_name || '').trim()) || !((event.task_name || '').trim()) || !event.due_date;
         }
 
         function populateEvents() {
             const eventsList = document.getElementById('eventsList');
             eventsList.innerHTML = '';
             document.getElementById('eventCount').textContent = currentEvents.length;
-            document.getElementById('courseName').textContent = allStepsData.course_name || 'Unknown';
+            document.getElementById('courseName').textContent = (currentEvents[0] && currentEvents[0].course_name) || 'Unknown';
 
             if (currentEvents.length === 0) {
                 eventsList.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">📭</div>
-                        <p>No events extracted. Please upload a valid syllabus.</p>
+                        <p>No events extracted. Please upload a valid syllabus, or add one manually.</p>
                     </div>
                 `;
+                updateContinueGate();
                 return;
             }
 
             currentEvents.forEach((event, index) => {
                 eventsList.innerHTML += createEventCard(event, index);
             });
+            updateContinueGate();
+        }
+
+        function updateContinueGate() {
+            const btn = document.getElementById('continueToCalendarBtn');
+            const warn = document.getElementById('incompleteWarning');
+            const incompleteCount = currentEvents.filter(isEventIncomplete).length;
+
+            if (currentEvents.length === 0 || incompleteCount > 0) {
+                btn.disabled = true;
+                warn.style.display = 'block';
+                warn.textContent = currentEvents.length === 0
+                    ? 'Add at least one event before continuing.'
+                    : `${incompleteCount} event(s) need a course, task, and date filled in before continuing.`;
+            } else {
+                btn.disabled = false;
+                warn.style.display = 'none';
+            }
         }
 
         function createEventCard(event, index) {
+            const incomplete = isEventIncomplete(event);
             return `
-                <div class="event-card" data-index="${index}">
-                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
-                        <div style="font-weight: bold; color: #667eea; font-size: 16px;">
-                            Event ${index + 1}
+                <div class="event-card${incomplete ? ' incomplete' : ''}" data-index="${index}">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <div class="mono" style="font-weight: 700; color: #4f46e5; font-size: 12px;">
+                            EVENT ${String(index + 1).padStart(2, '0')}
+                            <span class="incomplete-tag" style="${incomplete ? '' : 'display:none;'}">needs info</span>
                         </div>
                         <button class="btn btn-danger btn-sm" onclick="removeEvent(${index})">
-                            🗑️ Delete
+                            Delete
                         </button>
                     </div>
 
-                    <div style="margin-bottom: 15px;">
-                        <label style="display: block; font-weight: 600; color: #333; margin-bottom: 5px; font-size: 13px;">
-                            Course Name
-                        </label>
-                        <input type="text" value="${event.course_name || ''}" onchange="updateEvent(${index}, 'course_name', this.value)" placeholder="e.g., Introduction to Python">
-                    </div>
-
-                    <div style="margin-bottom: 15px;">
-                        <label style="display: block; font-weight: 600; color: #333; margin-bottom: 5px; font-size: 13px;">
-                            Task/Assignment Name
-                        </label>
-                        <input type="text" value="${event.task_name || ''}" onchange="updateEvent(${index}, 'task_name', this.value)" placeholder="e.g., Midterm Exam">
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div class="event-field-row">
                         <div>
-                            <label style="display: block; font-weight: 600; color: #333; margin-bottom: 5px; font-size: 13px;">
-                                📅 Due Date
-                            </label>
+                            <label class="field-label">Course</label>
+                            <input type="text" value="${event.course_name || ''}" onchange="updateEvent(${index}, 'course_name', this.value)" placeholder="e.g. CS101">
+                        </div>
+                        <div>
+                            <label class="field-label">Task / assignment</label>
+                            <input type="text" value="${event.task_name || ''}" onchange="updateEvent(${index}, 'task_name', this.value)" placeholder="e.g. Midterm Exam">
+                        </div>
+                    </div>
+
+                    <div class="event-field-row">
+                        <div>
+                            <label class="field-label">Due date</label>
                             <input type="date" value="${event.due_date || ''}" onchange="updateEvent(${index}, 'due_date', this.value)">
                         </div>
                         <div>
-                            <label style="display: block; font-weight: 600; color: #333; margin-bottom: 5px; font-size: 13px;">
-                                ⏰ Due Time
-                            </label>
+                            <label class="field-label">Due time</label>
                             <input type="time" value="${event.due_time || '23:59'}" onchange="updateEvent(${index}, 'due_time', this.value)">
                         </div>
                     </div>
 
-                    <div>
-                        <label style="display: block; font-weight: 600; color: #333; margin-bottom: 5px; font-size: 13px;">
-                            📝 Description
-                        </label>
-                        <textarea onchange="updateEvent(${index}, 'description', this.value)" placeholder="Add notes about this event..." style="resize: vertical; min-height: 70px;">${event.description || ''}</textarea>
+                    <div class="event-field" style="margin-bottom:0;">
+                        <label class="field-label">Description</label>
+                        <textarea onchange="updateEvent(${index}, 'description', this.value)" placeholder="Notes about this event...">${event.description || ''}</textarea>
                     </div>
                 </div>
             `;
         }
 
+        function refreshCardIncompleteState(index) {
+            const card = document.querySelector(`.event-card[data-index="${index}"]`);
+            if (!card) return;
+            const incomplete = isEventIncomplete(currentEvents[index]);
+            card.classList.toggle('incomplete', incomplete);
+            const tag = card.querySelector('.incomplete-tag');
+            if (tag) tag.style.display = incomplete ? 'inline' : 'none';
+        }
+
         function updateEvent(index, field, value) {
             if (currentEvents[index]) {
                 currentEvents[index][field] = value;
+                if (index === 0 && field === 'course_name') {
+                    document.getElementById('courseName').textContent = value || 'Unknown';
+                }
+                refreshCardIncompleteState(index);
+                updateContinueGate();
             }
         }
 
@@ -779,29 +916,204 @@
             populateEvents();
         }
 
-        function addNewEvent() {
-            const newEvent = {
-                course_name: allStepsData.course_name,
-                task_name: 'New Event',
+        function emptyEvent() {
+            return {
+                course_name: '',
+                task_name: '',
                 due_date: new Date().toISOString().split('T')[0],
                 due_time: '23:59',
                 description: ''
             };
+        }
+
+        function addNewEvent() {
+            const newEvent = emptyEvent();
+            newEvent.course_name = (currentEvents[0] && currentEvents[0].course_name) || '';
             currentEvents.push(newEvent);
             populateEvents();
         }
 
+        function startManualEntry() {
+            currentEvents = [emptyEvent()];
+            uploadedFileName = '';
+            dismissError();
+            goToStep(3);
+        }
+
+        // ---- Step 4: Choose your calendar ----
+        function prepareDestinationStep() {
+            selectedDestination = null;
+            document.getElementById('destEventCount').textContent = currentEvents.length;
+            document.querySelectorAll('.dest-card').forEach(c => c.classList.remove('selected'));
+            document.getElementById('destPanel').innerHTML = '';
+        }
+
+        async function selectDestination(dest) {
+            selectedDestination = dest;
+            dismissError();
+            document.querySelectorAll('.dest-card').forEach(c => c.classList.toggle('selected', c.dataset.dest === dest));
+            const panel = document.getElementById('destPanel');
+
+            if (dest === 'google') {
+                panel.innerHTML = renderGooglePanel(false);
+                try {
+                    const res = await fetch(API_BASE + '/auth/google/status');
+                    const data = await res.json();
+                    panel.innerHTML = renderGooglePanel(!!data.connected);
+                } catch (e) {
+                    panel.innerHTML = renderGooglePanel(false);
+                }
+            } else {
+                panel.innerHTML = renderIcsPanel(dest);
+            }
+        }
+
+        function renderGooglePanel(connected) {
+            const label = connected
+                ? `Push ${currentEvents.length} event(s) to Google Calendar`
+                : 'Connect Google Calendar & push events';
+            return `
+                <div class="dest-panel-inner">
+                    <p>${connected ? 'Google Calendar is connected.' : "You'll be asked to sign in to Google in a popup window."}</p>
+                    <p class="hint">Events go into a dedicated "Syllabus Deadlines" calendar, so your personal calendar stays untouched.</p>
+                    <button class="btn btn-primary" id="googleActionBtn" style="width:100%; margin-top:6px;" onclick="handleGoogleAction()">${label}</button>
+                    <div id="googleResult" style="margin-top:12px;"></div>
+                </div>
+            `;
+        }
+
+        function renderIcsPanel(dest) {
+            const copy = dest === 'apple'
+                ? 'Download the file below, then double-click it — it opens directly in Apple Calendar (Mac or iOS).'
+                : 'Download the universal .ics file below — it works with Outlook, Yahoo Calendar, Windows Calendar, Thunderbird, and more.';
+            return `
+                <div class="dest-panel-inner">
+                    <p>${copy}</p>
+                    <button class="btn btn-primary" style="width:100%;" onclick="downloadCalendar()">Download calendar file</button>
+                    <button class="btn btn-secondary" style="width:100%; margin-top:8px;" onclick="goToStep(5)">Continue →</button>
+                </div>
+            `;
+        }
+
+        async function handleGoogleAction() {
+            const btn = document.getElementById('googleActionBtn');
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = 'Working...';
+
+            try {
+                const statusRes = await fetch(API_BASE + '/auth/google/status');
+                const statusData = await statusRes.json();
+                if (!statusData.connected) {
+                    btn.textContent = 'Waiting for Google sign-in...';
+                    await connectGoogle();
+                }
+                btn.textContent = 'Adding events...';
+                await pushToGoogle(btn);
+            } catch (err) {
+                showError('Google Calendar: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+            }
+        }
+
+        function connectGoogle() {
+            return new Promise((resolve, reject) => {
+                const popup = window.open(API_BASE + '/auth/google/login', 'googleAuth', 'width=520,height=650');
+                if (!popup) {
+                    reject(new Error('Popup blocked — allow popups for this site and try again.'));
+                    return;
+                }
+
+                let settled = false;
+                const closeCheck = setInterval(() => {
+                    if (popup.closed && !settled) {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        reject(new Error('Sign-in window was closed before finishing.'));
+                    }
+                }, 500);
+
+                function handler(evt) {
+                    if (evt.origin !== API_BASE) return;
+                    if (!evt.data || !evt.data.type) return;
+                    if (evt.data.type === 'google-auth-success') {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        popup.close();
+                        resolve();
+                    } else if (evt.data.type === 'google-auth-error') {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        popup.close();
+                        reject(new Error(evt.data.detail || 'Google sign-in failed.'));
+                    }
+                }
+                window.addEventListener('message', handler);
+            });
+        }
+
+        async function pushToGoogle(btn) {
+            try {
+                const res = await fetch(API_BASE + '/calendar/google/push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ events: currentEvents })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Failed to push events.');
+                googlePushResult = data;
+                renderGoogleResult(data);
+            } catch (err) {
+                showError('Google push failed: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = 'Try again';
+            }
+        }
+
+        function renderGoogleResult(data) {
+            const resultDiv = document.getElementById('googleResult');
+            const failedNote = data.failed && data.failed.length ? `, ${data.failed.length} failed` : '';
+            resultDiv.innerHTML = `
+                <div class="status-message show status-success">${data.created} event(s) added to Google Calendar${failedNote}.</div>
+                <a href="${data.calendar_html_link}" target="_blank" class="btn btn-secondary" style="width:100%; margin-top:8px;">Open in Google Calendar</a>
+                <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="goToStep(5)">Continue →</button>
+            `;
+            document.getElementById('googleActionBtn').style.display = 'none';
+        }
+
+        // ---- Step 5: Done ----
+        function prepareDoneStep() {
+            const heading = document.getElementById('doneHeading');
+            const subtext = document.getElementById('doneSubtext');
+            const extra = document.getElementById('doneExtra');
+
+            if (selectedDestination === 'google') {
+                heading.textContent = 'Added to Google Calendar!';
+                subtext.textContent = `${currentEvents.length} event(s) are now in your "Syllabus Deadlines" calendar.`;
+                extra.innerHTML = googlePushResult
+                    ? `<a href="${googlePushResult.calendar_html_link}" target="_blank" class="btn btn-secondary">Open Google Calendar</a>`
+                    : '';
+            } else {
+                const destLabel = selectedDestination === 'apple' ? 'Apple Calendar' : 'your calendar app';
+                heading.textContent = 'Your calendar file is ready!';
+                subtext.textContent = `Open the downloaded file to add these events to ${destLabel}.`;
+                extra.innerHTML = `<button class="btn btn-secondary" onclick="downloadCalendar()">Download again</button>`;
+            }
+        }
+
         async function downloadCalendar() {
             try {
-                const response = await fetch('http://localhost:8000/download', {
+                const response = await fetch(API_BASE + '/download', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ events: currentEvents })
                 });
 
-                if (!response.ok) {
-                    throw new Error('Download failed');
-                }
+                if (!response.ok) throw new Error('Download failed');
 
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
@@ -812,16 +1124,19 @@
                 a.click();
                 window.URL.revokeObjectURL(url);
                 a.remove();
-
-                // Show success
-                const statusDiv = document.getElementById('statusMessage');
-                statusDiv.className = 'status-message show status-success';
-                statusDiv.textContent = '✅ Calendar downloaded successfully!';
-                statusDiv.style.display = 'block';
-
             } catch (error) {
                 showError('Download failed: ' + error.message);
             }
+        }
+
+        function resetToUpload() {
+            currentEvents = [];
+            uploadedFileName = '';
+            selectedDestination = null;
+            googlePushResult = null;
+            document.getElementById('fileInput').value = '';
+            dismissError();
+            goToStep(1);
         }
     </script>
 </body>

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 
@@ -59,12 +59,14 @@ class GeminiPipelineController:
     Attributes:
         api_key: Gemini API key. Falls back to GOOGLE_API_KEY / GEMINI_API_KEY
                  environment variables when not provided.
-        model:   Gemini model identifier string (default: gemini-1.5-flash).
+        model:   Gemini model identifier string. Defaults to the GEMINI_MODEL
+                 environment variable when set, otherwise DEFAULT_MODEL
+                 (gemini-2.0-flash).
         client:  Optional injected client object that satisfies GeminiClient.
     """
 
     api_key: str | None = None
-    model: str = DEFAULT_MODEL
+    model: str = field(default_factory=lambda: os.getenv("GEMINI_MODEL", DEFAULT_MODEL))
     client: object | None = None
 
     def build_prompt(self, syllabus_text: str) -> str:
