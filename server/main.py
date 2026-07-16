@@ -88,6 +88,7 @@ Environment variables required:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -98,10 +99,22 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 load_dotenv()
 
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 
 import asyncio
 import json
+import secrets
+import time
+from collections import deque
+
+from starlette.middleware.sessions import SessionMiddleware
 
 # Import the four layers of the processing pipeline
 from src.ingest.file_ingestor import extract_text_from_bytes
@@ -123,28 +136,111 @@ app = FastAPI(title="Syllabus-to-Calendar API", version="1.0.0")
 
 # CORS (Cross-Origin Resource Sharing) Middleware
 # ─────────────────────────────────────────────────
-# PROBLEM: Frontend runs at file:///C:/Users/.../index.html (file protocol)
-#          Backend runs at http://localhost:8000 (http protocol)
-#          Browsers block requests between different origins by default
-#
-# SOLUTION: Enable CORS to allow frontend to call backend API
-# 
-# allow_origins=["*"]: Accept requests from ANY origin (not secure for production)
-# allow_methods=["GET", "POST"]: Only allow these HTTP methods
-# allow_headers=["*"]: Accept any request headers
-#
-# Production note: In real deployment, restrict origins to your domain only
+# The frontend is served by this same app (see the "/" route below), so in
+# practice almost every request is same-origin and doesn't need CORS at all.
+# This stays as a defense-in-depth backstop, restricted to a single
+# configurable origin rather than a wildcard.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[os.getenv("ALLOWED_ORIGIN", "http://localhost:8000")],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+# Session cookie middleware -- gives each visitor a signed, opaque session
+# id so concurrent users' Google Calendar credentials never collide (see
+# src/calendar_push/google_calendar_client.py's per-session _sessions dict).
+# No database involved: the cookie just carries an id, the actual
+# credentials live in that module's in-memory store, keyed by this id.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET_KEY", "dev-only-insecure-key-change-in-production"),
+    same_site="lax",
+    https_only=os.getenv("SESSION_HTTPS_ONLY", "false").lower() == "true",
+)
+
+
+def _get_session_id(request: Request) -> str:
+    """Return this visitor's opaque session id, creating one on first use."""
+    sid = request.session.get("sid")
+    if not sid:
+        sid = secrets.token_urlsafe(32)
+        request.session["sid"] = sid
+    return sid
+
+
+# ---------------------------------------------------------------------------
+# Gemini rate limiting -- protects the one shared API key when many public
+# visitors upload concurrently. No external queue/Redis: an in-process
+# semaphore caps concurrent calls, and a sliding 60-second window caps total
+# calls per minute (the free tier's own limit). Not a strict FIFO queue --
+# a simple waiting counter is enough for honest user-facing messaging.
+# ---------------------------------------------------------------------------
+
+_GEMINI_MAX_CONCURRENT = int(os.getenv("GEMINI_MAX_CONCURRENT", "3"))
+_GEMINI_MAX_PER_MINUTE = int(os.getenv("GEMINI_MAX_PER_MINUTE", "15"))
+
+_gemini_semaphore = asyncio.Semaphore(_GEMINI_MAX_CONCURRENT)
+_gemini_call_times: deque[float] = deque()
+_gemini_rate_lock = asyncio.Lock()
+_gemini_waiting_count = 0
+
+
+async def _throttle_gemini():
+    """Async generator: yields a status string each time a wait is needed,
+    then returns once a concurrency slot is held and the sliding per-minute
+    window has room. Caller MUST call _release_gemini_slot() (in a finally
+    block) once its Gemini call completes.
+    """
+    global _gemini_waiting_count
+
+    if _gemini_semaphore.locked():
+        _gemini_waiting_count += 1
+        try:
+            yield f"The AI is busy — you're #{_gemini_waiting_count} in line..."
+            await _gemini_semaphore.acquire()
+        finally:
+            _gemini_waiting_count -= 1
+    else:
+        await _gemini_semaphore.acquire()
+
+    while True:
+        async with _gemini_rate_lock:
+            now = time.monotonic()
+            while _gemini_call_times and now - _gemini_call_times[0] > 60:
+                _gemini_call_times.popleft()
+            if len(_gemini_call_times) < _GEMINI_MAX_PER_MINUTE:
+                _gemini_call_times.append(now)
+                return
+            wait_time = max(0.0, 60 - (now - _gemini_call_times[0]))
+        yield f"Rate limit reached — waiting {wait_time:.0f}s before the next request..."
+        await asyncio.sleep(wait_time + 0.05)
+
+
+def _release_gemini_slot() -> None:
+    _gemini_semaphore.release()
+
 
 # Configuration constants - Business rules for file processing
 # ────────────────────────────────────────────────────────────
 SUPPORTED_TYPES = {".pdf", ".txt", ".md"}  # File extensions we accept
 MAX_FILE_SIZE_MB = 20                       # Maximum upload size limit
+
+INDEX_HTML_PATH = Path(__file__).resolve().parent.parent / "index.html"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENDPOINT 0: / (Serves the frontend)
+# ═════════════════════════════════════════════════════════════════════════════
+# Serves the single-file frontend from the same origin as the API, so
+# there's no separate frontend host, no CORS complexity for the common case,
+# and the OAuth popup/session-cookie flow gets a simple same-origin story.
+# No StaticFiles mount is needed -- index.html has no other local assets
+# (just the Tailwind CDN <script> tag).
+
+@app.get("/", include_in_schema=False)
+async def serve_index() -> FileResponse:
+    return FileResponse(INDEX_HTML_PATH)
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # ENDPOINT 1: /health (Health Check)
@@ -202,7 +298,7 @@ async def process_syllabus(file: UploadFile = File(...)) -> StreamingResponse:
             reads this incrementally so it can show real, live status instead
             of a simulated progress bar. Events emitted, in order:
 
-              event: phase  data: {"phase": "extract"|"ai"|"validate", "status": "start"|"done", "message": "..."}
+              event: phase  data: {"phase": "extract"|"ai"|"validate"|"queued", "status": "start"|"done", "message": "..."}
               event: error  data: {"phase": "...", "detail": "..."}   (stream ends here)
               event: result data: {"events": [...], "count": N}       (final message)
 
@@ -251,19 +347,29 @@ async def process_syllabus(file: UploadFile = File(...)) -> StreamingResponse:
                 yield sse("error", {"phase": "ai", "detail": "Server is missing a Gemini API key. Set GOOGLE_API_KEY on the server."})
                 return
 
+            # Wait for a Gemini call slot, honoring the concurrency cap and
+            # the shared key's per-minute rate limit. Surfaces an honest
+            # "queued" status instead of silence when other requests are
+            # ahead of this one.
+            async for wait_message in _throttle_gemini():
+                yield sse("phase", {"phase": "queued", "status": "start", "message": wait_message})
+
             model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
             controller = GeminiPipelineController(api_key=api_key, model=model)
             try:
-                raw_response = await asyncio.wait_for(
-                    asyncio.to_thread(controller.generate, raw_text),
-                    timeout=45.0,
-                )
-            except asyncio.TimeoutError:
-                yield sse("error", {"phase": "ai", "detail": "AI processing took too long (>45 seconds). The API might be overloaded. Try again in a moment."})
-                return
-            except Exception as exc:
-                yield sse("error", {"phase": "ai", "detail": _describe_gemini_error(exc)})
-                return
+                try:
+                    raw_response = await asyncio.wait_for(
+                        asyncio.to_thread(controller.generate, raw_text),
+                        timeout=45.0,
+                    )
+                except asyncio.TimeoutError:
+                    yield sse("error", {"phase": "ai", "detail": "AI processing took too long (>45 seconds). The API might be overloaded. Try again in a moment."})
+                    return
+                except Exception as exc:
+                    yield sse("error", {"phase": "ai", "detail": _describe_gemini_error(exc)})
+                    return
+            finally:
+                _release_gemini_slot()
 
             if not raw_response.strip():
                 yield sse("error", {"phase": "ai", "detail": "Gemini returned an empty response. Try a cleaner syllabus document."})
@@ -343,10 +449,11 @@ async def download_ics(request: Request) -> PlainTextResponse:
 # these routes return a 501 pointing at what's missing.
 
 @app.get("/auth/google/login")
-async def google_login() -> RedirectResponse:
+async def google_login(request: Request) -> RedirectResponse:
     """Redirect the browser into Google's OAuth consent screen."""
+    session_id = _get_session_id(request)
     try:
-        auth_url = gcal.build_authorization_url()
+        auth_url = gcal.build_authorization_url(session_id)
     except gcal.GoogleCalendarNotConfigured as exc:
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc))
     return RedirectResponse(auth_url)
@@ -379,36 +486,41 @@ async def google_callback(request: Request) -> HTMLResponse:
 
 
 @app.get("/auth/google/status")
-async def google_status() -> dict[str, bool]:
-    return {"connected": gcal.is_connected()}
+async def google_status(request: Request) -> dict[str, bool]:
+    # Also where a first-time visitor's session cookie gets established --
+    # the frontend always calls this before opening the sign-in popup.
+    session_id = _get_session_id(request)
+    return {"connected": gcal.is_connected(session_id)}
 
 
 @app.post("/auth/google/logout")
-async def google_logout() -> dict[str, bool]:
-    gcal.disconnect()
+async def google_logout(request: Request) -> dict[str, bool]:
+    session_id = _get_session_id(request)
+    gcal.disconnect(session_id)
     return {"connected": False}
 
 
 @app.post("/calendar/google/push")
 async def calendar_google_push(request: Request) -> JSONResponse:
-    """Push a JSON body of events into the dedicated Google Calendar.
+    """Push a JSON body of events into the visitor's dedicated Google Calendar.
 
     Request body: {"events": [ {...}, ... ]}
     Response: {"created": N, "failed": [...], "calendar_html_link": "..."}
     """
+    session_id = _get_session_id(request)
     body = await request.json()
     events: list[dict[str, Any]] = body.get("events", [])
     if not events:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No events provided.")
 
-    if not gcal.is_connected():
+    if not gcal.is_connected(session_id):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Google Calendar isn't connected yet. Sign in first.",
         )
 
     try:
-        result = await asyncio.to_thread(gcal.push_events, events)
+        result = await asyncio.to_thread(gcal.push_events, events, session_id)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -429,13 +541,12 @@ def _auth_result_page(success: bool, detail: str) -> HTMLResponse:
   <h2>{heading}</h2>
   <p>{body_text}</p>
   <script>
-    // Target origin is '*' because the opener may be a local file:// page
-    // (origin "null"), which postMessage can't address directly. The
-    // message carries no secrets (the token exchange already happened
-    // server-side) — the listener on the receiving end checks
-    // evt.origin === 'http://localhost:8000' to confirm it came from us.
+    // The opener (main app window) is served by this same FastAPI app, so
+    // it shares this page's origin -- target it directly instead of '*'.
+    // The listener on the receiving end double-checks
+    // evt.origin === window.location.origin before trusting the message.
     if (window.opener) {{
-      window.opener.postMessage({payload}, '*');
+      window.opener.postMessage({payload}, window.location.origin);
     }}
     setTimeout(function() {{ window.close(); }}, 1500);
   </script>
@@ -460,7 +571,6 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 # ---------------------------------------------------------------------------
 
 def _file_suffix(filename: str) -> str:
-    from pathlib import Path
     return Path(filename).suffix.lower()
 
 

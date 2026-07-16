@@ -1,21 +1,32 @@
 """Google Calendar OAuth 2.0 connection and event push.
 
 Handles the whole Google Calendar side of the app: the OAuth 2.0
-"Web application" consent flow, on-disk credential storage/refresh, and
+"Web application" consent flow, per-visitor credential storage/refresh, and
 pushing extracted syllabus events into a dedicated "Syllabus Deadlines"
 calendar so a user's personal calendar stays uncluttered.
 
-Requires a one-time manual setup step the user performs in Google Cloud
-Console (enable the Calendar API, create a "Web application" OAuth client
-with redirect URI http://localhost:8000/auth/google/callback, and save the
-downloaded client JSON to .secrets/client_secret.json). See README/plan for
-the full walkthrough.
+Credentials are kept in memory only, keyed by an opaque per-visitor session
+id (see server/main.py's SessionMiddleware) -- never written to disk. This
+matters once the app is hosted for multiple concurrent users: a single
+shared credential file would let one visitor's request read or clobber
+another's Google account. It also matches the app's "authenticate, mark the
+calendar, forget the user" design -- nothing about a visitor survives past
+their session (or a server restart).
+
+Requires a one-time manual setup step (either locally or on whichever host
+runs this): enable the Calendar API in Google Cloud Console, create a "Web
+application" OAuth client with a redirect URI matching OAUTH_REDIRECT_URI,
+and either save the downloaded client JSON to .secrets/client_secret.json
+(simplest for local dev) or set GOOGLE_OAUTH_CLIENT_ID/GOOGLE_OAUTH_CLIENT_SECRET
+as environment variables (safer for hosts with ephemeral disks, where a
+file saved at runtime might not survive a redeploy). See README for the
+full walkthrough.
 """
 
 from __future__ import annotations
 
 import json
-import secrets as secrets_module
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -36,48 +47,80 @@ except ImportError:  # pragma: no cover - tzlocal is a required dependency
 # itself, rather than requesting full access to the user's whole account.
 SCOPES = ["https://www.googleapis.com/auth/calendar.app.created"]
 
-REDIRECT_URI = "http://localhost:8000/auth/google/callback"
+REDIRECT_URI = os.getenv("OAUTH_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 CALENDAR_SUMMARY = "Syllabus Deadlines"
 EVENT_DURATION_MINUTES = 30
 
 SECRETS_DIR = Path(__file__).resolve().parents[2] / ".secrets"
 CLIENT_SECRET_PATH = SECRETS_DIR / "client_secret.json"
-STATE_PATH = SECRETS_DIR / "google_state.json"
 
 # In-flight OAuth attempts, keyed by the "state" token issued in the
-# authorization URL. Must store the *same* Flow object (not just the state
-# string) between build_authorization_url() and exchange_code_for_token(),
+# authorization URL. Stores (Flow, session_id): the same Flow object must be
+# reused between build_authorization_url() and exchange_code_for_token(),
 # because Flow generates a fresh random PKCE code_verifier per instance --
 # reusing a different Flow for the token exchange sends a mismatched
-# verifier and Google silently rejects the exchange. Fine as an in-memory
-# dict for a single-process, single-user local server; not meant to survive
-# a server restart.
-_pending_flows: dict[str, Flow] = {}
+# verifier and Google silently rejects the exchange. session_id records
+# which visitor this login attempt belongs to, so the exchanged credentials
+# land in the right person's bucket. In-memory only; doesn't survive a
+# server restart (fine -- an interrupted sign-in just needs retrying).
+_pending_flows: dict[str, tuple[Flow, str]] = {}
+
+# Per-visitor credential storage, keyed by an opaque session id. Each bucket
+# holds the same JSON shape as Credentials.to_json(), plus a cached
+# "calendar_id" once that visitor's dedicated calendar exists. In-memory
+# only -- no database, nothing written to disk per-user.
+_sessions: dict[str, dict[str, Any]] = {}
 
 
 class GoogleCalendarNotConfigured(Exception):
-    """Raised when .secrets/client_secret.json hasn't been set up yet."""
+    """Raised when no OAuth client is configured, via file or env vars."""
 
 
 def is_client_configured() -> bool:
-    """Whether the user has completed the Cloud Console setup step."""
-    return CLIENT_SECRET_PATH.exists()
-
-
-def _new_flow() -> Flow:
-    if not CLIENT_SECRET_PATH.exists():
-        raise GoogleCalendarNotConfigured(
-            "Google Calendar isn't set up yet. Save your OAuth client JSON "
-            f"to {CLIENT_SECRET_PATH} first (see setup instructions)."
-        )
-    return Flow.from_client_secrets_file(
-        str(CLIENT_SECRET_PATH),
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI,
+    """Whether the OAuth client is set up, either as a local file or env vars."""
+    return CLIENT_SECRET_PATH.exists() or bool(
+        os.getenv("GOOGLE_OAUTH_CLIENT_ID") and os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
     )
 
 
-def build_authorization_url() -> str:
+def _new_flow() -> Flow:
+    """Build a Flow from the local client_secret.json if present, else from
+    GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET environment variables.
+
+    The file path is the simplest local-dev setup and needs no change to an
+    already-working local workflow. The env-var path exists because most
+    hosting platforms' free/low tiers have ephemeral disks that don't
+    reliably persist across redeploys, making a file-based secret fragile
+    in production.
+    """
+    if CLIENT_SECRET_PATH.exists():
+        return Flow.from_client_secrets_file(
+            str(CLIENT_SECRET_PATH),
+            scopes=SCOPES,
+            redirect_uri=REDIRECT_URI,
+        )
+
+    client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+    if client_id and client_secret:
+        client_config = {
+            "web": {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        }
+        return Flow.from_client_config(client_config, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+
+    raise GoogleCalendarNotConfigured(
+        "Google Calendar isn't set up yet. Save your OAuth client JSON to "
+        f"{CLIENT_SECRET_PATH}, or set GOOGLE_OAUTH_CLIENT_ID and "
+        "GOOGLE_OAUTH_CLIENT_SECRET (see setup instructions)."
+    )
+
+
+def build_authorization_url(session_id: str) -> str:
     """Build the Google consent-screen URL for a fresh login attempt."""
     flow = _new_flow()
     # prompt="consent" forces Google to re-issue a refresh_token every time;
@@ -88,61 +131,48 @@ def build_authorization_url() -> str:
         prompt="consent",
         include_granted_scopes="true",
     )
-    _pending_flows[state] = flow
+    _pending_flows[state] = (flow, session_id)
     return auth_url
 
 
 def exchange_code_for_token(code: str, state: str) -> None:
-    """Exchange the callback's auth code for tokens and persist them.
+    """Exchange the callback's auth code for tokens, stored under that visitor's session.
 
     Reuses the exact Flow instance created in build_authorization_url() so
     its PKCE code_verifier matches the code_challenge Google already
     received -- a fresh Flow here would generate a different verifier and
     Google would reject the exchange.
     """
-    flow = _pending_flows.pop(state, None)
-    if flow is None:
+    pending = _pending_flows.pop(state, None)
+    if pending is None:
         raise ValueError("Invalid or expired OAuth state (possible CSRF or stale link).")
+    flow, session_id = pending
 
     flow.fetch_token(code=code)
     creds = flow.credentials
 
-    existing = _load_state()
-    existing.update(json.loads(creds.to_json()))
-    _save_state(existing)
+    bucket = _sessions.setdefault(session_id, {})
+    bucket.update(json.loads(creds.to_json()))
 
 
-def is_connected() -> bool:
-    state = _load_state()
-    return bool(state.get("refresh_token") or state.get("token"))
+def is_connected(session_id: str) -> bool:
+    bucket = _sessions.get(session_id, {})
+    return bool(bucket.get("refresh_token") or bucket.get("token"))
 
 
-def disconnect() -> None:
-    STATE_PATH.unlink(missing_ok=True)
+def disconnect(session_id: str) -> None:
+    _sessions.pop(session_id, None)
 
 
-def _load_state() -> dict[str, Any]:
-    if not STATE_PATH.exists():
-        return {}
-    return json.loads(STATE_PATH.read_text(encoding="utf-8"))
-
-
-def _save_state(data: dict[str, Any]) -> None:
-    SECRETS_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-
-def _get_credentials() -> Credentials:
-    state = _load_state()
-    if not state.get("token") and not state.get("refresh_token"):
+def _get_credentials(session_id: str) -> Credentials:
+    bucket = _sessions.get(session_id, {})
+    if not bucket.get("token") and not bucket.get("refresh_token"):
         raise RuntimeError("Google Calendar isn't connected yet.")
 
-    creds = Credentials.from_authorized_user_info(state, scopes=SCOPES)
+    creds = Credentials.from_authorized_user_info(bucket, scopes=SCOPES)
     if creds.expired and creds.refresh_token:
         creds.refresh(GoogleAuthRequest())
-        updated = _load_state()
-        updated.update(json.loads(creds.to_json()))
-        _save_state(updated)
+        bucket.update(json.loads(creds.to_json()))
     return creds
 
 
@@ -157,18 +187,18 @@ def _local_timezone() -> str:
     return "UTC"
 
 
-def _get_or_create_calendar_id(service) -> str:
-    """Return the dedicated calendar's id, creating it on first use.
+def _get_or_create_calendar_id(service, session_id: str) -> str:
+    """Return this visitor's dedicated calendar id, creating it on first use.
 
     Deliberately never calls calendarList().list() -- that endpoint lists
     the user's ENTIRE calendar list (including calendars this app didn't
     create) and the calendar.app.created scope forbids it outright (403
-    "insufficient authentication scopes"). Instead, the id is cached
-    locally after creation and re-validated with calendars().get(), which
-    IS permitted for a calendar this app created.
+    "insufficient authentication scopes"). Instead, the id is cached in
+    this visitor's session bucket after creation and re-validated with
+    calendars().get(), which IS permitted for a calendar this app created.
     """
-    state = _load_state()
-    cached_id = state.get("calendar_id")
+    bucket = _sessions.setdefault(session_id, {})
+    cached_id = bucket.get("calendar_id")
     if cached_id:
         try:
             service.calendars().get(calendarId=cached_id).execute()
@@ -179,8 +209,7 @@ def _get_or_create_calendar_id(service) -> str:
     created = service.calendars().insert(
         body={"summary": CALENDAR_SUMMARY, "timeZone": _local_timezone()}
     ).execute()
-    state["calendar_id"] = created["id"]
-    _save_state(state)
+    bucket["calendar_id"] = created["id"]
     return created["id"]
 
 
@@ -202,16 +231,16 @@ def _build_event_body(event: dict[str, str], timezone: str) -> dict[str, Any]:
     }
 
 
-def push_events(events: list[dict[str, str]]) -> dict[str, Any]:
-    """Push events into the dedicated "Syllabus Deadlines" calendar.
+def push_events(events: list[dict[str, str]], session_id: str) -> dict[str, Any]:
+    """Push events into this visitor's dedicated "Syllabus Deadlines" calendar.
 
     Returns {"created": N, "failed": [{"event": ..., "error": ...}, ...],
     "calendar_id": ..., "calendar_html_link": ...}. Never raises on a
     per-event failure — one bad event shouldn't sink the whole batch.
     """
-    creds = _get_credentials()
+    creds = _get_credentials(session_id)
     service = build("calendar", "v3", credentials=creds)
-    calendar_id = _get_or_create_calendar_id(service)
+    calendar_id = _get_or_create_calendar_id(service, session_id)
     timezone = _local_timezone()
 
     created = 0

@@ -2,9 +2,9 @@
 
 ## Quick Start
 
-Open `index.html` in a browser (double-click it, or `file:///.../index.html`).
-The FastAPI backend must be running at `localhost:8000` first
-(`uvicorn server.main:app --reload --port 8000`).
+Run the backend (`uvicorn server.main:app --reload --port 8000`), then open
+`http://localhost:8000/` in a browser — the backend serves the frontend
+itself.
 
 ## The 5-step flow
 

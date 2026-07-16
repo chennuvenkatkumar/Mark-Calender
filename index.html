@@ -190,6 +190,7 @@
             justify-content: center;
             gap: 7px;
             border: 1.5px solid transparent;
+            min-height: 44px;
         }
 
         .btn-primary { background: #111827; color: white; }
@@ -204,7 +205,7 @@
         }
         .btn-secondary:hover { border-color: #111827; }
 
-        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; min-height: 32px; }
 
         .btn-danger { background: white; color: #dc2626; border-color: #fecaca; }
         .btn-danger:hover { background: #fef2f2; border-color: #dc2626; }
@@ -396,10 +397,19 @@
 
         .dest-panel-inner p { color: #4b5563; margin-bottom: 10px; line-height: 1.5; font-size: 13.5px; }
         .dest-panel-inner .hint { font-size: 11.5px; color: #9ca3af; font-family: ui-monospace, monospace; }
+
+        /* ---- Mobile / narrow-screen adjustments ---- */
+        @media (max-width: 640px) {
+            .event-field-row { grid-template-columns: 1fr; gap: 8px; }
+
+            .step-circle { width: 30px; height: 30px; font-size: 11px; }
+            .step-connector { top: 15px; }
+            .step-text { font-size: 8px; letter-spacing: 0.02em; }
+        }
     </style>
 </head>
 <body>
-    <div class="min-h-screen py-10 px-4">
+    <div class="min-h-screen py-6 sm:py-10 px-4">
         <div class="max-w-3xl mx-auto">
             <div class="mb-8">
                 <div class="mono" style="font-size: 11px; letter-spacing: 0.12em; color: #9ca3af; text-transform: uppercase; margin-bottom: 8px;">
@@ -413,7 +423,7 @@
                 </p>
             </div>
 
-            <div class="panel p-8">
+            <div class="panel p-4 sm:p-8">
 
                 <div class="step-indicator">
                     <div class="step-item active" data-step="1">
@@ -492,6 +502,7 @@
                         <h3 style="font-size: 16px; font-weight: 700; color: #111827;">
                             Processing <span id="processingFile" class="mono" style="color:#4f46e5;"></span>
                         </h3>
+                        <div id="queueStatus" class="mono" style="display:none; font-size:12px; color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:8px 12px; margin:14px auto 0; max-width:440px; text-align:left;"></div>
                         <div class="process-steps">
                             <div class="process-step" data-phase="extract">
                                 <div class="process-step-icon">1</div>
@@ -619,7 +630,7 @@
 
     <script>
         const TOTAL_STEPS = 5;
-        const API_BASE = 'http://localhost:8000';
+        const API_BASE = ''; // relative -- frontend is served by the same FastAPI app
 
         let currentEvents = [];
         let uploadedFileName = '';
@@ -669,7 +680,7 @@
                 response = await fetch(API_BASE + '/process', { method: 'POST', body: formData });
             } catch (err) {
                 stopElapsedTimer();
-                showError('Cannot connect to the server at localhost:8000. Is the server running?');
+                showError('Cannot connect to the server. Is it running?');
                 goToStep(1);
                 return;
             }
@@ -714,6 +725,9 @@
                 el.querySelector('.process-step-message').textContent = '';
             });
             document.getElementById('processingFile').textContent = uploadedFileName;
+            const queueStatus = document.getElementById('queueStatus');
+            queueStatus.style.display = 'none';
+            queueStatus.textContent = '';
         }
 
         function handleSseMessage(rawEvent) {
@@ -728,7 +742,19 @@
             let payload;
             try { payload = JSON.parse(dataLine); } catch (e) { return; }
 
+            if (eventType === 'phase' && payload.phase === 'queued') {
+                // No matching .process-step for this phase -- it's a transient
+                // wait status shown above the checklist, not a pipeline step.
+                const queueStatus = document.getElementById('queueStatus');
+                queueStatus.textContent = payload.message || '';
+                queueStatus.style.display = payload.message ? 'block' : 'none';
+                return;
+            }
+
             if (eventType === 'phase') {
+                // Once past queueing, hide the queue banner -- an actual
+                // pipeline phase is now progressing.
+                document.getElementById('queueStatus').style.display = 'none';
                 const el = document.querySelector(`.process-step[data-phase="${payload.phase}"]`);
                 if (!el) return;
                 if (payload.status === 'start') {
@@ -1036,7 +1062,7 @@
                 }, 500);
 
                 function handler(evt) {
-                    if (evt.origin !== API_BASE) return;
+                    if (evt.origin !== window.location.origin) return;
                     if (!evt.data || !evt.data.type) return;
                     if (evt.data.type === 'google-auth-success') {
                         settled = true;

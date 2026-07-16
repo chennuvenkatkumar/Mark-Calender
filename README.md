@@ -72,8 +72,15 @@ only the ones it creates itself.
 uvicorn server.main:app --reload --port 8000
 ```
 
-Then open `index.html` directly in a browser (double-click it, or
-`file:///path/to/index.html`).
+Then open `http://localhost:8000/` in a browser — the backend serves the
+frontend itself, so there's no separate file to open.
+
+## Hosting it for multiple people
+
+The app is built to be safely hosted for concurrent public users (session-
+scoped Google credentials, a rate limiter protecting the shared Gemini key,
+configurable CORS/redirect URIs) — see `DEPLOYMENT.md` for the full
+walkthrough.
 
 ## Project layout
 
@@ -93,9 +100,12 @@ Then open `index.html` directly in a browser (double-click it, or
 - **No database, no stored user data.** The app processes a syllabus and
   hands you an outcome (a pushed calendar or a downloaded file) — it
   doesn't keep your syllabus text, extracted events, or personal
-  information after your session. The only thing persisted locally is your
-  own Google OAuth token (`.secrets/google_state.json`), so you don't have
-  to re-consent every single run.
+  information after your session. Google OAuth credentials are held
+  in-memory only, keyed by an opaque per-visitor session cookie — nothing
+  is ever written to disk per-user, and everyone's session clears on a
+  server restart. This also means each visitor re-authenticates with
+  Google each session rather than staying signed in indefinitely — a
+  deliberate tradeoff, not a limitation.
 - **Real-time status, not a fake progress bar.** `/process` streams actual
   per-phase progress via Server-Sent Events as the pipeline runs
   (extract → Gemini → validate), rather than simulating one with timers.
