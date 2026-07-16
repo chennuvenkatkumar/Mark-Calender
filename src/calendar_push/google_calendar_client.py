@@ -44,10 +44,15 @@ SECRETS_DIR = Path(__file__).resolve().parents[2] / ".secrets"
 CLIENT_SECRET_PATH = SECRETS_DIR / "client_secret.json"
 STATE_PATH = SECRETS_DIR / "google_state.json"
 
-# In-memory CSRF state tokens issued by build_authorization_url() and
-# consumed by exchange_code_for_token(). Fine for a single-process,
-# single-user local server; not meant to survive a server restart.
-_pending_states: set[str] = set()
+# In-flight OAuth attempts, keyed by the "state" token issued in the
+# authorization URL. Must store the *same* Flow object (not just the state
+# string) between build_authorization_url() and exchange_code_for_token(),
+# because Flow generates a fresh random PKCE code_verifier per instance --
+# reusing a different Flow for the token exchange sends a mismatched
+# verifier and Google silently rejects the exchange. Fine as an in-memory
+# dict for a single-process, single-user local server; not meant to survive
+# a server restart.
+_pending_flows: dict[str, Flow] = {}
 
 
 class GoogleCalendarNotConfigured(Exception):
@@ -59,7 +64,7 @@ def is_client_configured() -> bool:
     return CLIENT_SECRET_PATH.exists()
 
 
-def _new_flow(state: str | None = None) -> Flow:
+def _new_flow() -> Flow:
     if not CLIENT_SECRET_PATH.exists():
         raise GoogleCalendarNotConfigured(
             "Google Calendar isn't set up yet. Save your OAuth client JSON "
@@ -69,7 +74,6 @@ def _new_flow(state: str | None = None) -> Flow:
         str(CLIENT_SECRET_PATH),
         scopes=SCOPES,
         redirect_uri=REDIRECT_URI,
-        state=state,
     )
 
 
@@ -84,17 +88,22 @@ def build_authorization_url() -> str:
         prompt="consent",
         include_granted_scopes="true",
     )
-    _pending_states.add(state)
+    _pending_flows[state] = flow
     return auth_url
 
 
 def exchange_code_for_token(code: str, state: str) -> None:
-    """Exchange the callback's auth code for tokens and persist them."""
-    if state not in _pending_states:
-        raise ValueError("Invalid or expired OAuth state (possible CSRF or stale link).")
-    _pending_states.discard(state)
+    """Exchange the callback's auth code for tokens and persist them.
 
-    flow = _new_flow(state=state)
+    Reuses the exact Flow instance created in build_authorization_url() so
+    its PKCE code_verifier matches the code_challenge Google already
+    received -- a fresh Flow here would generate a different verifier and
+    Google would reject the exchange.
+    """
+    flow = _pending_flows.pop(state, None)
+    if flow is None:
+        raise ValueError("Invalid or expired OAuth state (possible CSRF or stale link).")
+
     flow.fetch_token(code=code)
     creds = flow.credentials
 
@@ -149,6 +158,15 @@ def _local_timezone() -> str:
 
 
 def _get_or_create_calendar_id(service) -> str:
+    """Return the dedicated calendar's id, creating it on first use.
+
+    Deliberately never calls calendarList().list() -- that endpoint lists
+    the user's ENTIRE calendar list (including calendars this app didn't
+    create) and the calendar.app.created scope forbids it outright (403
+    "insufficient authentication scopes"). Instead, the id is cached
+    locally after creation and re-validated with calendars().get(), which
+    IS permitted for a calendar this app created.
+    """
     state = _load_state()
     cached_id = state.get("calendar_id")
     if cached_id:
@@ -157,13 +175,6 @@ def _get_or_create_calendar_id(service) -> str:
             return cached_id
         except Exception:
             pass  # cached calendar no longer exists/reachable — recreate below
-
-    calendar_list = service.calendarList().list().execute()
-    for entry in calendar_list.get("items", []):
-        if entry.get("summary") == CALENDAR_SUMMARY:
-            state["calendar_id"] = entry["id"]
-            _save_state(state)
-            return entry["id"]
 
     created = service.calendars().insert(
         body={"summary": CALENDAR_SUMMARY, "timeZone": _local_timezone()}
