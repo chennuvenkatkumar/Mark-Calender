@@ -365,6 +365,7 @@
         }
 
         .dest-card {
+            position: relative;
             border: 1.5px solid #e5e7eb;
             border-radius: 10px;
             padding: 18px 14px;
@@ -379,6 +380,21 @@
         .dest-card.selected {
             border-color: #4f46e5;
             background: #f5f5ff;
+        }
+
+        .dest-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            font-family: ui-monospace, monospace;
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #166534;
+            background: #dcfce7;
+            border-radius: 5px;
+            padding: 2px 6px;
         }
 
         .dest-icon { font-size: 28px; margin-bottom: 8px; }
@@ -397,6 +413,48 @@
 
         .dest-panel-inner p { color: #4b5563; margin-bottom: 10px; line-height: 1.5; font-size: 13.5px; }
         .dest-panel-inner .hint { font-size: 11.5px; color: #9ca3af; font-family: ui-monospace, monospace; }
+
+        /* ---- Choose-calendar popup modal ---- */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(17, 24, 39, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 50;
+        }
+
+        .modal-backdrop.open { display: flex; }
+
+        .modal {
+            position: relative;
+            background: white;
+            border-radius: 14px;
+            width: 100%;
+            max-width: 480px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 24px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+            animation: fadeIn 0.2s ease;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: none;
+            border: none;
+            font-size: 20px;
+            line-height: 1;
+            cursor: pointer;
+            color: #9ca3af;
+            padding: 4px;
+        }
+
+        .modal-close:hover { color: #111827; }
 
         /* ---- Mobile / narrow-screen adjustments ---- */
         @media (max-width: 640px) {
@@ -562,43 +620,9 @@
                         <button class="btn btn-secondary" onclick="goToStep(1)" style="flex: 1;">
                             ← Back
                         </button>
-                        <button class="btn btn-primary" id="continueToCalendarBtn" onclick="goToStep(4)" style="flex: 1;">
+                        <button class="btn btn-primary" id="continueToCalendarBtn" onclick="openDestinationModal()" style="flex: 1;">
                             Choose calendar →
                         </button>
-                    </div>
-                </div>
-
-                <!-- Step 4: Choose your calendar -->
-                <div class="section" id="step-4">
-                    <h2 style="font-size: 19px; font-weight: 700; color: #111827; margin-bottom: 6px;">
-                        Choose your calendar
-                    </h2>
-                    <p style="color: #6b7280; margin-bottom: 4px; font-size: 13px;">
-                        Where would you like these <span id="destEventCount" class="mono">0</span> events marked?
-                    </p>
-
-                    <div class="destination-grid">
-                        <div class="dest-card" data-dest="google" onclick="selectDestination('google')">
-                            <div class="dest-icon">🟦</div>
-                            <div class="dest-title">Google Calendar</div>
-                            <div class="dest-desc">Pushed directly via your account — no file needed.</div>
-                        </div>
-                        <div class="dest-card" data-dest="apple" onclick="selectDestination('apple')">
-                            <div class="dest-icon">🍎</div>
-                            <div class="dest-title">Apple Calendar</div>
-                            <div class="dest-desc">Download a file that opens straight into Calendar.</div>
-                        </div>
-                        <div class="dest-card" data-dest="device" onclick="selectDestination('device')">
-                            <div class="dest-icon">💻</div>
-                            <div class="dest-title">Device / Other</div>
-                            <div class="dest-desc">Universal .ics file for Outlook, Yahoo, and more.</div>
-                        </div>
-                    </div>
-
-                    <div id="destPanel" class="dest-panel"></div>
-
-                    <div style="margin-top: 18px;">
-                        <button class="btn btn-secondary" onclick="goToStep(3)">← Back to review</button>
                     </div>
                 </div>
 
@@ -628,14 +652,55 @@
         </div>
     </div>
 
+    <!-- Choose-calendar popup modal (opened from Step 3, not a wizard section) -->
+    <div id="destModalBackdrop" class="modal-backdrop">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="destModalTitle">
+            <button class="modal-close" onclick="closeDestinationModal()" aria-label="Close">&times;</button>
+
+            <h2 id="destModalTitle" style="font-size: 19px; font-weight: 700; color: #111827; margin-bottom: 6px;">
+                Choose your calendar
+            </h2>
+            <p style="color: #6b7280; margin-bottom: 4px; font-size: 13px;">
+                Where would you like these <span id="destEventCount" class="mono">0</span> events marked?
+            </p>
+
+            <div class="destination-grid">
+                <div class="dest-card" data-dest="device" onclick="selectDestination('device')">
+                    <span class="dest-badge">Default</span>
+                    <div class="dest-icon">💻</div>
+                    <div class="dest-title">Device / Other</div>
+                    <div class="dest-desc">Downloads a file that opens straight into your phone or computer's own calendar app. No sign-in.</div>
+                </div>
+                <div class="dest-card" data-dest="google" onclick="selectDestination('google')">
+                    <div class="dest-icon">🟦</div>
+                    <div class="dest-title">Google Calendar</div>
+                    <div class="dest-desc">Pushed directly via your account — no file needed.</div>
+                </div>
+                <div class="dest-card" data-dest="microsoft" onclick="selectDestination('microsoft')">
+                    <div class="dest-icon">🟪</div>
+                    <div class="dest-title">Microsoft Calendar</div>
+                    <div class="dest-desc">Outlook.com or Microsoft 365 (covers Teams' calendar too) — pushed directly.</div>
+                </div>
+                <div class="dest-card" data-dest="apple" onclick="selectDestination('apple')">
+                    <div class="dest-icon">🍎</div>
+                    <div class="dest-title">Apple Calendar</div>
+                    <div class="dest-desc">Download a file that opens straight into Calendar.</div>
+                </div>
+            </div>
+
+            <div id="destPanel" class="dest-panel"></div>
+        </div>
+    </div>
+
     <script>
         const TOTAL_STEPS = 5;
         const API_BASE = ''; // relative -- frontend is served by the same FastAPI app
 
         let currentEvents = [];
         let uploadedFileName = '';
-        let selectedDestination = null; // 'google' | 'apple' | 'device'
+        let selectedDestination = null; // 'device' | 'google' | 'microsoft' | 'apple'
         let googlePushResult = null;
+        let microsoftPushResult = null;
         let elapsedTimerId = null;
         let processStartTime = null;
 
@@ -809,24 +874,47 @@
         }
 
         // ---- Step navigation ----
-        function goToStep(step) {
-            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        function updateStepIndicator(step) {
             document.querySelectorAll('.step-item').forEach(s => s.classList.remove('active', 'completed'));
-
-            document.getElementById('step-' + step).classList.add('active');
-
             for (let i = 1; i <= TOTAL_STEPS; i++) {
                 const stepItem = document.querySelector(`[data-step="${i}"]`);
                 if (i < step) stepItem.classList.add('completed');
                 else if (i === step) stepItem.classList.add('active');
             }
+        }
+
+        function goToStep(step) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.getElementById('step-' + step).classList.add('active');
+            updateStepIndicator(step);
 
             if (step === 3) populateEvents();
-            if (step === 4) prepareDestinationStep();
             if (step === 5) prepareDoneStep();
 
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
+
+        // ---- Choose-calendar modal (opened from Step 3, not a wizard section) ----
+        function openDestinationModal() {
+            document.getElementById('destModalBackdrop').classList.add('open');
+            updateStepIndicator(4);
+            prepareDestinationStep();
+            selectDestination('device'); // pre-selected default: zero setup, works everywhere
+            document.addEventListener('keydown', _handleModalEscape);
+        }
+
+        function closeDestinationModal() {
+            document.getElementById('destModalBackdrop').classList.remove('open');
+            document.removeEventListener('keydown', _handleModalEscape);
+        }
+
+        function _handleModalEscape(e) {
+            if (e.key === 'Escape') closeDestinationModal();
+        }
+
+        document.getElementById('destModalBackdrop').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeDestinationModal();
+        });
 
         // ---- Step 3: Review ----
         function isEventIncomplete(event) {
@@ -989,6 +1077,15 @@
                 } catch (e) {
                     panel.innerHTML = renderGooglePanel(false);
                 }
+            } else if (dest === 'microsoft') {
+                panel.innerHTML = renderMicrosoftPanel(false);
+                try {
+                    const res = await fetch(API_BASE + '/auth/microsoft/status');
+                    const data = await res.json();
+                    panel.innerHTML = renderMicrosoftPanel(!!data.connected);
+                } catch (e) {
+                    panel.innerHTML = renderMicrosoftPanel(false);
+                }
             } else {
                 panel.innerHTML = renderIcsPanel(dest);
             }
@@ -1016,7 +1113,21 @@
                 <div class="dest-panel-inner">
                     <p>${copy}</p>
                     <button class="btn btn-primary" style="width:100%;" onclick="downloadCalendar()">Download calendar file</button>
-                    <button class="btn btn-secondary" style="width:100%; margin-top:8px;" onclick="goToStep(5)">Continue →</button>
+                    <button class="btn btn-secondary" style="width:100%; margin-top:8px;" onclick="closeDestinationModal(); goToStep(5);">Continue →</button>
+                </div>
+            `;
+        }
+
+        function renderMicrosoftPanel(connected) {
+            const label = connected
+                ? `Push ${currentEvents.length} event(s) to Microsoft Calendar`
+                : 'Connect Microsoft Calendar & push events';
+            return `
+                <div class="dest-panel-inner">
+                    <p>${connected ? 'Microsoft Calendar is connected.' : "You'll be asked to sign in to Microsoft (Outlook.com or a school/work account) in a popup window."}</p>
+                    <p class="hint">Events go into a dedicated "Syllabus Deadlines" calendar. Note: Microsoft's permission model grants this app broader calendar access than Google's does — it only ever creates and writes to its own calendar, by design, not because Microsoft restricts it to that.</p>
+                    <button class="btn btn-primary" id="microsoftActionBtn" style="width:100%; margin-top:6px;" onclick="handleMicrosoftAction()">${label}</button>
+                    <div id="microsoftResult" style="margin-top:12px;"></div>
                 </div>
             `;
         }
@@ -1106,9 +1217,99 @@
             resultDiv.innerHTML = `
                 <div class="status-message show status-success">${data.created} event(s) added to Google Calendar${failedNote}.</div>
                 <a href="${data.calendar_html_link}" target="_blank" class="btn btn-secondary" style="width:100%; margin-top:8px;">Open in Google Calendar</a>
-                <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="goToStep(5)">Continue →</button>
+                <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="closeDestinationModal(); goToStep(5);">Continue →</button>
             `;
             document.getElementById('googleActionBtn').style.display = 'none';
+        }
+
+        async function handleMicrosoftAction() {
+            const btn = document.getElementById('microsoftActionBtn');
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = 'Working...';
+
+            try {
+                const statusRes = await fetch(API_BASE + '/auth/microsoft/status');
+                const statusData = await statusRes.json();
+                if (!statusData.connected) {
+                    btn.textContent = 'Waiting for Microsoft sign-in...';
+                    await connectMicrosoft();
+                }
+                btn.textContent = 'Adding events...';
+                await pushToMicrosoft(btn);
+            } catch (err) {
+                showError('Microsoft Calendar: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+            }
+        }
+
+        function connectMicrosoft() {
+            return new Promise((resolve, reject) => {
+                const popup = window.open(API_BASE + '/auth/microsoft/login', 'microsoftAuth', 'width=520,height=650');
+                if (!popup) {
+                    reject(new Error('Popup blocked — allow popups for this site and try again.'));
+                    return;
+                }
+
+                let settled = false;
+                const closeCheck = setInterval(() => {
+                    if (popup.closed && !settled) {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        reject(new Error('Sign-in window was closed before finishing.'));
+                    }
+                }, 500);
+
+                function handler(evt) {
+                    if (evt.origin !== window.location.origin) return;
+                    if (!evt.data || !evt.data.type) return;
+                    if (evt.data.type === 'microsoft-auth-success') {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        popup.close();
+                        resolve();
+                    } else if (evt.data.type === 'microsoft-auth-error') {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        popup.close();
+                        reject(new Error(evt.data.detail || 'Microsoft sign-in failed.'));
+                    }
+                }
+                window.addEventListener('message', handler);
+            });
+        }
+
+        async function pushToMicrosoft(btn) {
+            try {
+                const res = await fetch(API_BASE + '/calendar/microsoft/push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ events: currentEvents })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Failed to push events.');
+                microsoftPushResult = data;
+                renderMicrosoftResult(data);
+            } catch (err) {
+                showError('Microsoft push failed: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = 'Try again';
+            }
+        }
+
+        function renderMicrosoftResult(data) {
+            const resultDiv = document.getElementById('microsoftResult');
+            const failedNote = data.failed && data.failed.length ? `, ${data.failed.length} failed` : '';
+            resultDiv.innerHTML = `
+                <div class="status-message show status-success">${data.created} event(s) added to Microsoft Calendar${failedNote}.</div>
+                <a href="${data.calendar_html_link}" target="_blank" class="btn btn-secondary" style="width:100%; margin-top:8px;">Open Outlook Calendar</a>
+                <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="closeDestinationModal(); goToStep(5);">Continue →</button>
+            `;
+            document.getElementById('microsoftActionBtn').style.display = 'none';
         }
 
         // ---- Step 5: Done ----
@@ -1122,6 +1323,12 @@
                 subtext.textContent = `${currentEvents.length} event(s) are now in your "Syllabus Deadlines" calendar.`;
                 extra.innerHTML = googlePushResult
                     ? `<a href="${googlePushResult.calendar_html_link}" target="_blank" class="btn btn-secondary">Open Google Calendar</a>`
+                    : '';
+            } else if (selectedDestination === 'microsoft') {
+                heading.textContent = 'Added to Microsoft Calendar!';
+                subtext.textContent = `${currentEvents.length} event(s) are now in your "Syllabus Deadlines" calendar.`;
+                extra.innerHTML = microsoftPushResult
+                    ? `<a href="${microsoftPushResult.calendar_html_link}" target="_blank" class="btn btn-secondary">Open Outlook Calendar</a>`
                     : '';
             } else {
                 const destLabel = selectedDestination === 'apple' ? 'Apple Calendar' : 'your calendar app';
@@ -1160,6 +1367,7 @@
             uploadedFileName = '';
             selectedDestination = null;
             googlePushResult = null;
+            microsoftPushResult = null;
             document.getElementById('fileInput').value = '';
             dismissError();
             goToStep(1);

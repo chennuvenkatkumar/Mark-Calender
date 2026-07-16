@@ -1,10 +1,10 @@
 # Deploying (hosted, multi-user)
 
-The app is code-ready to host publicly: session-scoped Google OAuth (no
-database — see README's "Notes on the design"), a rate limiter protecting
-the shared Gemini key, and CORS/frontend serving that work off a single
-configurable origin. This doc covers the one part that's on you: standing
-up an actual host.
+The app is code-ready to host publicly: session-scoped Google/Microsoft
+OAuth (no database — see README's "Notes on the design"), a rate limiter
+protecting the shared Gemini key, and CORS/frontend serving that work off a
+single configurable origin. This doc covers the one part that's on you:
+standing up an actual host.
 
 ## Recommended: Render
 
@@ -30,9 +30,12 @@ Render-specific at the code level.
    | `GEMINI_MODEL` | Optional, e.g. `gemini-flash-lite-latest` |
    | `GOOGLE_OAUTH_CLIENT_ID` | From the same OAuth client JSON you downloaded for local dev |
    | `GOOGLE_OAUTH_CLIENT_SECRET` | Same source |
+   | `MICROSOFT_OAUTH_CLIENT_ID` | From the Azure app registration |
+   | `MICROSOFT_OAUTH_CLIENT_SECRET` | Same source |
    | `SESSION_SECRET_KEY` | Random value — generate once via `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
    | `SESSION_HTTPS_ONLY` | `true` (cookies only sent over HTTPS in production) |
    | `OAUTH_REDIRECT_URI` | `https://<your-app-url>/auth/google/callback` |
+   | `MICROSOFT_OAUTH_REDIRECT_URI` | `https://<your-app-url>/auth/microsoft/callback` |
    | `ALLOWED_ORIGIN` | `https://<your-app-url>` |
    | `GEMINI_MAX_CONCURRENT` | Optional, default `3` |
    | `GEMINI_MAX_PER_MINUTE` | Optional, default `15` |
@@ -45,9 +48,12 @@ Render-specific at the code level.
    `https://<your-app-url>/auth/google/callback` as a **second** entry,
    alongside the existing `http://localhost:8000/auth/google/callback`.
    Both coexist fine on one client — local dev keeps working after this.
-5. Update `OAUTH_REDIRECT_URI` and `ALLOWED_ORIGIN` (step 2) to match the
-   real URL once you have it, and redeploy if you set them before knowing
-   the final URL.
+5. **Same for Microsoft** — in the Entra app registration's **Authentication**
+   settings, add `https://<your-app-url>/auth/microsoft/callback` as a
+   second Web redirect URI alongside the localhost one.
+6. Update `OAUTH_REDIRECT_URI`, `MICROSOFT_OAUTH_REDIRECT_URI`, and
+   `ALLOWED_ORIGIN` (step 2) to match the real URL once you have it, and
+   redeploy if you set them before knowing the final URL.
 
 ## Known caveats
 

@@ -122,6 +122,7 @@ from src.ai.gemini_pipeline_controller import GeminiPipelineController, DEFAULT_
 from src.validation.string_validator import sanitize_model_output
 from src.export.icalendar_factory import build_ics
 from src.calendar_push import google_calendar_client as gcal
+from src.calendar_push import microsoft_calendar_client as mscal
 
 """
 INITIALIZATION SECTION - Configuration & Setup
@@ -472,17 +473,17 @@ async def google_callback(request: Request) -> HTMLResponse:
 
     if error:
         detail = f"Google sign-in was cancelled or failed: {error}"
-        return _auth_result_page(success=False, detail=detail)
+        return _auth_result_page(success=False, detail=detail, provider="google")
 
     if not code or not state:
-        return _auth_result_page(success=False, detail="Missing code/state in Google's redirect.")
+        return _auth_result_page(success=False, detail="Missing code/state in Google's redirect.", provider="google")
 
     try:
         gcal.exchange_code_for_token(code=code, state=state)
     except Exception as exc:
-        return _auth_result_page(success=False, detail=str(exc))
+        return _auth_result_page(success=False, detail=str(exc), provider="google")
 
-    return _auth_result_page(success=True, detail="")
+    return _auth_result_page(success=True, detail="", provider="google")
 
 
 @app.get("/auth/google/status")
@@ -530,8 +531,93 @@ async def calendar_google_push(request: Request) -> JSONResponse:
     return JSONResponse(content=result)
 
 
-def _auth_result_page(success: bool, detail: str) -> HTMLResponse:
-    message_type = "google-auth-success" if success else "google-auth-error"
+# ---------------------------------------------------------------------------
+# Microsoft (Outlook/Microsoft 365) Calendar OAuth + push
+# ---------------------------------------------------------------------------
+# Same shape as the Google routes above. Covers both personal Outlook.com
+# accounts and work/school Microsoft 365 accounts (Teams' calendar tab is
+# this same backend, not a separate calendar system). Requires a one-time
+# manual Azure app registration -- see src/calendar_push/microsoft_calendar_client.py
+# and README for details. Until that's done, these routes return a 501.
+
+@app.get("/auth/microsoft/login")
+async def microsoft_login(request: Request) -> RedirectResponse:
+    """Redirect the browser into Microsoft's OAuth consent screen."""
+    session_id = _get_session_id(request)
+    try:
+        auth_url = mscal.build_authorization_url(session_id)
+    except mscal.MicrosoftCalendarNotConfigured as exc:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc))
+    return RedirectResponse(auth_url)
+
+
+@app.get("/auth/microsoft/callback")
+async def microsoft_callback(request: Request) -> HTMLResponse:
+    """OAuth redirect target — exchanges the auth code for tokens."""
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    error = request.query_params.get("error")
+
+    if error:
+        detail = f"Microsoft sign-in was cancelled or failed: {error}"
+        return _auth_result_page(success=False, detail=detail, provider="microsoft")
+
+    if not code or not state:
+        return _auth_result_page(success=False, detail="Missing code/state in Microsoft's redirect.", provider="microsoft")
+
+    try:
+        mscal.exchange_code_for_token(code=code, state=state)
+    except Exception as exc:
+        return _auth_result_page(success=False, detail=str(exc), provider="microsoft")
+
+    return _auth_result_page(success=True, detail="", provider="microsoft")
+
+
+@app.get("/auth/microsoft/status")
+async def microsoft_status(request: Request) -> dict[str, bool]:
+    session_id = _get_session_id(request)
+    return {"connected": mscal.is_connected(session_id)}
+
+
+@app.post("/auth/microsoft/logout")
+async def microsoft_logout(request: Request) -> dict[str, bool]:
+    session_id = _get_session_id(request)
+    mscal.disconnect(session_id)
+    return {"connected": False}
+
+
+@app.post("/calendar/microsoft/push")
+async def calendar_microsoft_push(request: Request) -> JSONResponse:
+    """Push a JSON body of events into the visitor's dedicated Microsoft Calendar.
+
+    Request body: {"events": [ {...}, ... ]}
+    Response: {"created": N, "failed": [...], "calendar_html_link": "..."}
+    """
+    session_id = _get_session_id(request)
+    body = await request.json()
+    events: list[dict[str, Any]] = body.get("events", [])
+    if not events:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No events provided.")
+
+    if not mscal.is_connected(session_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Microsoft Calendar isn't connected yet. Sign in first.",
+        )
+
+    try:
+        result = await asyncio.to_thread(mscal.push_events, events, session_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to push events to Microsoft Calendar: {exc}",
+        )
+
+    return JSONResponse(content=result)
+
+
+def _auth_result_page(success: bool, detail: str, provider: str = "google") -> HTMLResponse:
+    message_type = f"{provider}-auth-success" if success else f"{provider}-auth-error"
     heading = "Connected!" if success else "Sign-in failed"
     body_text = "You can close this window." if success else detail
     payload = json.dumps({"type": message_type, "detail": detail})
