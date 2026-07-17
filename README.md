@@ -2,8 +2,8 @@
 
 Upload a syllabus (PDF, TXT, or MD) and get every exam, quiz, and assignment
 deadline extracted automatically and marked on a calendar — Google Calendar
-or Microsoft/Outlook directly, or a universal `.ics` file for Apple Calendar
-or any other calendar app.
+directly, or a universal `.ics` file for Apple Calendar or any other
+calendar app.
 
 ## How it works
 
@@ -13,18 +13,15 @@ Upload syllabus (or add an event by hand)
     -> Gemini extracts course/task/date/time/description as JSON
     -> validated & normalized (dates -> YYYY-MM-DD, times -> HH:MM)
     -> review & edit extracted events in the browser
-    -> pick a destination from a popup: Device (default) / Google / Microsoft / Apple
-    -> Google & Microsoft: pushed directly via OAuth into a dedicated calendar
+    -> pick a destination from a popup: Device (default) / Google / Apple
+    -> Google: pushed directly via OAuth into a dedicated calendar
        Apple/Device: download a ready-to-import .ics file
 ```
 
 The destination picker defaults to **Device** — it needs no sign-in and
 works on literally any phone or computer via the `.ics` download (the OS
 routes the file straight to whatever the native calendar app is). Google
-and Microsoft are opt-in upgrades for a direct push with no file at all.
-"Microsoft" also covers Teams — Teams' calendar tab is the same Microsoft
-365/Outlook backend, not a separate calendar system, so there's no separate
-Teams option.
+is an opt-in upgrade for a direct push with no file at all.
 
 The whole pipeline runs locally: a FastAPI backend on `localhost:8000` and a
 single static `index.html` frontend (no build step, no framework).
@@ -74,38 +71,7 @@ your primary calendar) using the restricted `calendar.app.created` OAuth
 scope, so this app never has access to your existing calendars or events —
 only the ones it creates itself.
 
-### 4. (Optional) Set up Microsoft Calendar push
-
-Only needed for the "Microsoft" destination (covers both Outlook.com
-personal accounts and school/work Microsoft 365 accounts, including Teams).
-
-1. [Entra admin center](https://entra.microsoft.com) → **App registrations**
-   → **New registration**.
-2. Supported account types: **"Accounts in any organizational directory and
-   personal Microsoft accounts"** — required to cover both personal
-   Outlook.com accounts and school/work Microsoft 365 accounts.
-3. **Authentication** → add a **Web** redirect URI:
-   `http://localhost:8000/auth/microsoft/callback`.
-4. **API permissions** → Microsoft Graph → Delegated permissions → add
-   `Calendars.ReadWrite`, `offline_access`, `User.Read`.
-5. **Certificates & secrets** → **New client secret** → copy the value
-   immediately (Azure only shows it once).
-6. Add to `.env`:
-   ```
-   MICROSOFT_OAUTH_CLIENT_ID=your-client-id
-   MICROSOFT_OAUTH_CLIENT_SECRET=your-client-secret
-   ```
-
-Unlike Google, Azure has no downloadable "client secret JSON" file — env
-vars are the only configuration path here. Also unlike Google's
-`calendar.app.created` scope, Microsoft has no OAuth scope narrow enough to
-*enforce* "only calendars this app created" — `Calendars.ReadWrite`
-technically grants access to your entire calendar set. This app still only
-ever creates and writes to its own dedicated calendar, but that's this
-codebase's own convention, not something the Microsoft permission model
-guarantees the way Google's does.
-
-### 5. Run it
+### 4. Run it
 
 ```
 uvicorn server.main:app --reload --port 8000
@@ -130,8 +96,7 @@ walkthrough.
 | `src/validation/string_validator.py` | Parses/normalizes Gemini's JSON into event dicts |
 | `src/export/icalendar_factory.py` | Builds RFC-5545 `.ics` calendar files |
 | `src/calendar_push/google_calendar_client.py` | Google OAuth + pushes events into Calendar API |
-| `src/calendar_push/microsoft_calendar_client.py` | Microsoft Graph OAuth + pushes events into Outlook/365 Calendar |
-| `server/main.py` | FastAPI backend: streaming `/process`, `/download`, `/auth/google/*`, `/auth/microsoft/*`, `/calendar/{google,microsoft}/push` |
+| `server/main.py` | FastAPI backend: streaming `/process`, `/download`, `/auth/google/*`, `/calendar/google/push` |
 | `index.html` | The whole frontend — 5-step wizard + a popup destination picker, vanilla JS + Tailwind CDN |
 | `main.py` | CLI runner for the core pipeline (no web server, no calendar push) |
 
@@ -140,7 +105,7 @@ walkthrough.
 - **No database, no stored user data.** The app processes a syllabus and
   hands you an outcome (a pushed calendar or a downloaded file) — it
   doesn't keep your syllabus text, extracted events, or personal
-  information after your session. Google/Microsoft OAuth credentials are
+  information after your session. Google OAuth credentials are
   held in-memory only, keyed by an opaque per-visitor session cookie —
   nothing is ever written to disk per-user, and everyone's session clears
   on a server restart. This also means each visitor re-authenticates each

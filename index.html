@@ -676,11 +676,6 @@
                     <div class="dest-title">Google Calendar</div>
                     <div class="dest-desc">Pushed directly via your account — no file needed.</div>
                 </div>
-                <div class="dest-card" data-dest="microsoft" onclick="selectDestination('microsoft')">
-                    <div class="dest-icon">🟪</div>
-                    <div class="dest-title">Microsoft Calendar</div>
-                    <div class="dest-desc">Outlook.com or Microsoft 365 (covers Teams' calendar too) — pushed directly.</div>
-                </div>
                 <div class="dest-card" data-dest="apple" onclick="selectDestination('apple')">
                     <div class="dest-icon">🍎</div>
                     <div class="dest-title">Apple Calendar</div>
@@ -698,9 +693,8 @@
 
         let currentEvents = [];
         let uploadedFileName = '';
-        let selectedDestination = null; // 'device' | 'google' | 'microsoft' | 'apple'
+        let selectedDestination = null; // 'device' | 'google' | 'apple'
         let googlePushResult = null;
-        let microsoftPushResult = null;
         let elapsedTimerId = null;
         let processStartTime = null;
 
@@ -1077,15 +1071,6 @@
                 } catch (e) {
                     panel.innerHTML = renderGooglePanel(false);
                 }
-            } else if (dest === 'microsoft') {
-                panel.innerHTML = renderMicrosoftPanel(false);
-                try {
-                    const res = await fetch(API_BASE + '/auth/microsoft/status');
-                    const data = await res.json();
-                    panel.innerHTML = renderMicrosoftPanel(!!data.connected);
-                } catch (e) {
-                    panel.innerHTML = renderMicrosoftPanel(false);
-                }
             } else {
                 panel.innerHTML = renderIcsPanel(dest);
             }
@@ -1114,20 +1099,6 @@
                     <p>${copy}</p>
                     <button class="btn btn-primary" style="width:100%;" onclick="downloadCalendar()">Download calendar file</button>
                     <button class="btn btn-secondary" style="width:100%; margin-top:8px;" onclick="closeDestinationModal(); goToStep(5);">Continue →</button>
-                </div>
-            `;
-        }
-
-        function renderMicrosoftPanel(connected) {
-            const label = connected
-                ? `Push ${currentEvents.length} event(s) to Microsoft Calendar`
-                : 'Connect Microsoft Calendar & push events';
-            return `
-                <div class="dest-panel-inner">
-                    <p>${connected ? 'Microsoft Calendar is connected.' : "You'll be asked to sign in to Microsoft (Outlook.com or a school/work account) in a popup window."}</p>
-                    <p class="hint">Events go into a dedicated "Syllabus Deadlines" calendar. Note: Microsoft's permission model grants this app broader calendar access than Google's does — it only ever creates and writes to its own calendar, by design, not because Microsoft restricts it to that.</p>
-                    <button class="btn btn-primary" id="microsoftActionBtn" style="width:100%; margin-top:6px;" onclick="handleMicrosoftAction()">${label}</button>
-                    <div id="microsoftResult" style="margin-top:12px;"></div>
                 </div>
             `;
         }
@@ -1222,96 +1193,6 @@
             document.getElementById('googleActionBtn').style.display = 'none';
         }
 
-        async function handleMicrosoftAction() {
-            const btn = document.getElementById('microsoftActionBtn');
-            btn.disabled = true;
-            const originalLabel = btn.textContent;
-            btn.textContent = 'Working...';
-
-            try {
-                const statusRes = await fetch(API_BASE + '/auth/microsoft/status');
-                const statusData = await statusRes.json();
-                if (!statusData.connected) {
-                    btn.textContent = 'Waiting for Microsoft sign-in...';
-                    await connectMicrosoft();
-                }
-                btn.textContent = 'Adding events...';
-                await pushToMicrosoft(btn);
-            } catch (err) {
-                showError('Microsoft Calendar: ' + err.message);
-                btn.disabled = false;
-                btn.textContent = originalLabel;
-            }
-        }
-
-        function connectMicrosoft() {
-            return new Promise((resolve, reject) => {
-                const popup = window.open(API_BASE + '/auth/microsoft/login', 'microsoftAuth', 'width=520,height=650');
-                if (!popup) {
-                    reject(new Error('Popup blocked — allow popups for this site and try again.'));
-                    return;
-                }
-
-                let settled = false;
-                const closeCheck = setInterval(() => {
-                    if (popup.closed && !settled) {
-                        settled = true;
-                        clearInterval(closeCheck);
-                        window.removeEventListener('message', handler);
-                        reject(new Error('Sign-in window was closed before finishing.'));
-                    }
-                }, 500);
-
-                function handler(evt) {
-                    if (evt.origin !== window.location.origin) return;
-                    if (!evt.data || !evt.data.type) return;
-                    if (evt.data.type === 'microsoft-auth-success') {
-                        settled = true;
-                        clearInterval(closeCheck);
-                        window.removeEventListener('message', handler);
-                        popup.close();
-                        resolve();
-                    } else if (evt.data.type === 'microsoft-auth-error') {
-                        settled = true;
-                        clearInterval(closeCheck);
-                        window.removeEventListener('message', handler);
-                        popup.close();
-                        reject(new Error(evt.data.detail || 'Microsoft sign-in failed.'));
-                    }
-                }
-                window.addEventListener('message', handler);
-            });
-        }
-
-        async function pushToMicrosoft(btn) {
-            try {
-                const res = await fetch(API_BASE + '/calendar/microsoft/push', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ events: currentEvents })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || 'Failed to push events.');
-                microsoftPushResult = data;
-                renderMicrosoftResult(data);
-            } catch (err) {
-                showError('Microsoft push failed: ' + err.message);
-                btn.disabled = false;
-                btn.textContent = 'Try again';
-            }
-        }
-
-        function renderMicrosoftResult(data) {
-            const resultDiv = document.getElementById('microsoftResult');
-            const failedNote = data.failed && data.failed.length ? `, ${data.failed.length} failed` : '';
-            resultDiv.innerHTML = `
-                <div class="status-message show status-success">${data.created} event(s) added to Microsoft Calendar${failedNote}.</div>
-                <a href="${data.calendar_html_link}" target="_blank" class="btn btn-secondary" style="width:100%; margin-top:8px;">Open Outlook Calendar</a>
-                <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="closeDestinationModal(); goToStep(5);">Continue →</button>
-            `;
-            document.getElementById('microsoftActionBtn').style.display = 'none';
-        }
-
         // ---- Step 5: Done ----
         function prepareDoneStep() {
             const heading = document.getElementById('doneHeading');
@@ -1323,12 +1204,6 @@
                 subtext.textContent = `${currentEvents.length} event(s) are now in your "Syllabus Deadlines" calendar.`;
                 extra.innerHTML = googlePushResult
                     ? `<a href="${googlePushResult.calendar_html_link}" target="_blank" class="btn btn-secondary">Open Google Calendar</a>`
-                    : '';
-            } else if (selectedDestination === 'microsoft') {
-                heading.textContent = 'Added to Microsoft Calendar!';
-                subtext.textContent = `${currentEvents.length} event(s) are now in your "Syllabus Deadlines" calendar.`;
-                extra.innerHTML = microsoftPushResult
-                    ? `<a href="${microsoftPushResult.calendar_html_link}" target="_blank" class="btn btn-secondary">Open Outlook Calendar</a>`
                     : '';
             } else {
                 const destLabel = selectedDestination === 'apple' ? 'Apple Calendar' : 'your calendar app';
@@ -1367,7 +1242,6 @@
             uploadedFileName = '';
             selectedDestination = null;
             googlePushResult = null;
-            microsoftPushResult = null;
             document.getElementById('fileInput').value = '';
             dismissError();
             goToStep(1);

@@ -14,7 +14,3 @@ google-auth>=2.29.0             # Credentials objects + token refresh
 google-auth-oauthlib>=1.2.0     # OAuth 2.0 web-app flow (Flow class)
 google-api-python-client>=2.126.0  # Calendar API client
 tzlocal>=5.2             # Detect the user's local IANA timezone for event times
-
-# Iteration 4 -- Microsoft/Outlook Calendar OAuth push
-msal>=1.28.0             # Microsoft Authentication Library (confidential-client auth code flow)
-requests>=2.31.0         # Direct Microsoft Graph REST calls (msal pulls this in transitively; pinned since imported directly)
