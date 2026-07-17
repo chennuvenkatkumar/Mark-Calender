@@ -1,0 +1,90 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//SyllabusToCalendarAI//AcademicSync v1.0//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+UID:10b2d805-67ce-44aa-a8d5-d0a4943398c4
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Assignment 1: Hello World and Variables
+DTSTART:20240915T235900
+DESCRIPTION:Basic Python variables and syntax
+END:VEVENT
+BEGIN:VEVENT
+UID:17040b21-4e40-4bf0-bcfd-98c60fab87ab
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Quiz 1 on Python syntax
+DTSTART:20240922T170000
+DESCRIPTION:Python syntax evaluation
+END:VEVENT
+BEGIN:VEVENT
+UID:9b8f4eaf-20bf-4496-850a-430c1716ac4f
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Assignment 2: Build a Calculator
+DTSTART:20241001T235900
+DESCRIPTION:Function and module implementation
+END:VEVENT
+BEGIN:VEVENT
+UID:505a9387-b189-4889-bdc5-92bf57cc3cf6
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Midterm Project Proposal
+DTSTART:20241008T150000
+DESCRIPTION:Project proposal submission
+END:VEVENT
+BEGIN:VEVENT
+UID:5e6bf59a-e333-461a-8824-84696bbe7f65
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Assignment 3: Create a Class
+DTSTART:20241020T235900
+DESCRIPTION:Object-oriented programming implementation
+END:VEVENT
+BEGIN:VEVENT
+UID:3b1cca25-ff6f-47aa-bb91-9b2e30546855
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Lab Practical Exam
+DTSTART:20241027T140000
+DESCRIPTION:Practical coding examination
+END:VEVENT
+BEGIN:VEVENT
+UID:c01dc01d-6f25-4109-979b-6b42b142c352
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Assignment 4: List and Dictionary Operations
+DTSTART:20241110T235900
+DESCRIPTION:Data structures practice
+END:VEVENT
+BEGIN:VEVENT
+UID:a0b5c996-9329-4d73-8411-6de3bb830ea6
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Code Review Submission
+DTSTART:20241115T160000
+DESCRIPTION:Code quality and best practices review
+END:VEVENT
+BEGIN:VEVENT
+UID:56ad2c78-11a4-4a51-9baf-632cf82da875
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Assignment 5: API Integration Project
+DTSTART:20241125T235900
+DESCRIPTION:Working with external APIs
+END:VEVENT
+BEGIN:VEVENT
+UID:9bc84fa1-c293-418e-936b-9fc2050623f8
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Final Project Presentation
+DTSTART:20241203T130000
+DESCRIPTION:Capstone project presentation
+END:VEVENT
+BEGIN:VEVENT
+UID:81154ba4-c875-4e0e-9503-1c12cc077a80
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Final Exam
+DTSTART:20241215T100000
+DESCRIPTION:Comprehensive final assessment
+END:VEVENT
+BEGIN:VEVENT
+UID:010e0099-97e6-4e7b-91b6-fd3e8bc41df4
+DTSTAMP:20260714T201125Z
+SUMMARY:Introduction to Python Programming - Assignment 6: Capstone Project
+DTSTART:20241220T235900
+DESCRIPTION:Advanced Python project showcase
+END:VEVENT
+END:VCALENDAR

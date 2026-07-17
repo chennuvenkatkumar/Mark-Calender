@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Syllabus to Calendar - Extract & Manage Deadlines</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body { height: 100%; }
+
+        body {
+            background-color: #fafafa;
+            background-image: radial-gradient(circle, #e5e7eb 1px, transparent 1px);
+            background-size: 22px 22px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+            color: #111827;
+            min-height: 100vh;
+        }
+
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Consolas, monospace;
+        }
+
+        .panel {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+        }
+
+        /* ---- Step indicator ---- */
+        .step-indicator {
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 32px;
+        }
+
+        .step-item { flex: 1; text-align: center; position: relative; }
+
+        .step-circle {
+            width: 38px;
+            height: 38px;
+            margin: 0 auto 8px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.18s ease;
+            border: 1.5px solid #d1d5db;
+            background: white;
+            color: #9ca3af;
+        }
+
+        .step-item.active .step-circle {
+            border-color: #4f46e5;
+            color: #4f46e5;
+            background: #eef2ff;
+        }
+
+        .step-item.completed .step-circle {
+            background: #111827;
+            border-color: #111827;
+            color: white;
+        }
+
+        .step-item.completed .step-circle::after { content: '✓'; font-size: 15px; }
+
+        .step-connector {
+            position: absolute;
+            top: 19px;
+            left: 50%;
+            width: 100%;
+            height: 1.5px;
+            background: #e5e7eb;
+            z-index: -1;
+            transition: background 0.18s ease;
+        }
+
+        .step-item:last-child .step-connector { display: none; }
+        .step-item.completed ~ .step-item .step-connector { background: #111827; }
+
+        .step-text {
+            font-size: 11px;
+            color: #9ca3af;
+            font-weight: 500;
+            font-family: ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Consolas, monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .step-item.active .step-text { color: #4f46e5; font-weight: 700; }
+
+        .section { display: none; animation: fadeIn 0.25s ease-out; }
+        .section.active { display: block; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .upload-zone {
+            border: 1.5px dashed #d1d5db;
+            border-radius: 10px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.15s ease, background-color 0.15s ease;
+        }
+
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #4f46e5;
+            background-color: #f5f5ff;
+        }
+
+        /* ---- Event cards (compact) ---- */
+        .event-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            transition: border-color 0.15s ease;
+        }
+
+        .event-card:hover { border-color: #c7c9d1; }
+
+        .event-card.incomplete { border-color: #f59e0b; background: #fffbeb; }
+
+        .incomplete-tag {
+            font-family: ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Consolas, monospace;
+            font-size: 10px;
+            font-weight: 700;
+            color: #b45309;
+            background: #fef3c7;
+            border-radius: 5px;
+            padding: 2px 6px;
+            margin-left: 8px;
+        }
+
+        .field-label {
+            display: block;
+            font-family: ui-monospace, SFMono-Regular, 'Roboto Mono', Menlo, Consolas, monospace;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #9ca3af;
+            margin-bottom: 3px;
+        }
+
+        .event-field-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .event-field { margin-bottom: 8px; }
+
+        .event-card input, .event-card textarea {
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 13px;
+            width: 100%;
+            font-family: inherit;
+            transition: border-color 0.15s ease;
+        }
+
+        .event-card input:focus, .event-card textarea:focus {
+            outline: none;
+            border-color: #4f46e5;
+        }
+
+        .event-card textarea { min-height: 42px; resize: vertical; }
+
+        .btn {
+            padding: 9px 18px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+            font-size: 13.5px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            border: 1.5px solid transparent;
+            min-height: 44px;
+        }
+
+        .btn-primary { background: #111827; color: white; }
+        .btn-primary:hover:not(:disabled) { background: #000; }
+        .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .btn-secondary {
+            background: white;
+            color: #111827;
+            border-color: #d1d5db;
+            text-decoration: none;
+        }
+        .btn-secondary:hover { border-color: #111827; }
+
+        .btn-sm { padding: 6px 12px; font-size: 12px; min-height: 32px; }
+
+        .btn-danger { background: white; color: #dc2626; border-color: #fecaca; }
+        .btn-danger:hover { background: #fef2f2; border-color: #dc2626; }
+
+        .btn-add { background: white; color: #4b5563; border: 1.5px dashed #d1d5db; }
+        .btn-add:hover { border-color: #111827; color: #111827; }
+
+        .status-message {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin: 12px 0;
+            display: none;
+            font-size: 13.5px;
+            border: 1px solid transparent;
+        }
+
+        .status-message.show { display: block; }
+        .status-success { background: #f0fdf4; color: #166534; border-color: #bbf7d0; }
+        .status-error { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+
+        .global-error {
+            position: relative;
+            display: none;
+            align-items: flex-start;
+            gap: 10px;
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+            border-left: 3px solid #dc2626;
+            padding: 12px 36px 12px 14px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 13.5px;
+        }
+
+        .global-error.show { display: flex; }
+
+        .global-error .close-btn {
+            position: absolute;
+            top: 8px;
+            right: 10px;
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            color: #991b1b;
+            opacity: 0.6;
+        }
+
+        .global-error .close-btn:hover { opacity: 1; }
+
+        .summary-stat {
+            background: #fafafa;
+            border: 1px solid #e5e7eb;
+            padding: 14px 18px;
+            border-radius: 8px;
+            text-align: center;
+            margin: 0;
+        }
+
+        .summary-stat .number { font-size: 24px; font-weight: 700; color: #111827; font-family: ui-monospace, monospace; }
+        .summary-stat .label {
+            font-size: 10.5px;
+            color: #9ca3af;
+            margin-top: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-family: ui-monospace, monospace;
+        }
+
+        .empty-state { text-align: center; padding: 32px 20px; color: #9ca3af; }
+        .empty-state-icon { font-size: 44px; margin-bottom: 12px; }
+
+        .divider { height: 1px; background: #e5e7eb; margin: 22px 0; }
+
+        /* ---- Processing step: live checklist ---- */
+        .process-steps {
+            max-width: 440px;
+            margin: 6px auto 0;
+            text-align: left;
+        }
+
+        .process-step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 4px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .process-step:last-child { border-bottom: none; }
+
+        .process-step-icon {
+            width: 26px;
+            height: 26px;
+            flex-shrink: 0;
+            border-radius: 7px;
+            border: 1.5px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-family: ui-monospace, monospace;
+            color: #9ca3af;
+            transition: all 0.18s ease;
+        }
+
+        .process-step.active .process-step-icon {
+            border-color: #4f46e5;
+            border-top-color: transparent;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .process-step.done .process-step-icon {
+            border-color: #111827;
+            background: #111827;
+            color: white;
+        }
+
+        .process-step.done .process-step-icon::after { content: '✓'; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .process-step-body { flex: 1; min-width: 0; }
+
+        .process-step-title {
+            font-weight: 600;
+            color: #9ca3af;
+            font-size: 14px;
+            transition: color 0.18s ease;
+        }
+
+        .process-step.active .process-step-title,
+        .process-step.done .process-step-title { color: #111827; }
+
+        .process-step-message {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 1px;
+            min-height: 15px;
+            font-family: ui-monospace, monospace;
+        }
+
+        .elapsed-timer {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 18px;
+            font-family: ui-monospace, monospace;
+        }
+
+        /* ---- Destination cards (Choose your calendar) ---- */
+        .destination-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin: 18px 0;
+        }
+
+        .dest-card {
+            position: relative;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 18px 14px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            background: white;
+        }
+
+        .dest-card:hover { border-color: #a5a6f6; }
+
+        .dest-card.selected {
+            border-color: #4f46e5;
+            background: #f5f5ff;
+        }
+
+        .dest-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            font-family: ui-monospace, monospace;
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #166534;
+            background: #dcfce7;
+            border-radius: 5px;
+            padding: 2px 6px;
+        }
+
+        .dest-icon { font-size: 28px; margin-bottom: 8px; }
+        .dest-title { font-weight: 700; color: #111827; font-size: 14px; margin-bottom: 3px; }
+        .dest-desc { font-size: 11.5px; color: #9ca3af; line-height: 1.4; }
+
+        .dest-panel { margin-top: 6px; }
+
+        .dest-panel-inner {
+            background: #fafafa;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 18px;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .dest-panel-inner p { color: #4b5563; margin-bottom: 10px; line-height: 1.5; font-size: 13.5px; }
+        .dest-panel-inner .hint { font-size: 11.5px; color: #9ca3af; font-family: ui-monospace, monospace; }
+
+        /* ---- Choose-calendar popup modal ---- */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(17, 24, 39, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 50;
+        }
+
+        .modal-backdrop.open { display: flex; }
+
+        .modal {
+            position: relative;
+            background: white;
+            border-radius: 14px;
+            width: 100%;
+            max-width: 480px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 24px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+            animation: fadeIn 0.2s ease;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: none;
+            border: none;
+            font-size: 20px;
+            line-height: 1;
+            cursor: pointer;
+            color: #9ca3af;
+            padding: 4px;
+        }
+
+        .modal-close:hover { color: #111827; }
+
+        /* ---- Mobile / narrow-screen adjustments ---- */
+        @media (max-width: 640px) {
+            .event-field-row { grid-template-columns: 1fr; gap: 8px; }
+
+            .step-circle { width: 30px; height: 30px; font-size: 11px; }
+            .step-connector { top: 15px; }
+            .step-text { font-size: 8px; letter-spacing: 0.02em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="min-h-screen py-6 sm:py-10 px-4">
+        <div class="max-w-3xl mx-auto">
+            <div class="mb-8">
+                <div class="mono" style="font-size: 11px; letter-spacing: 0.12em; color: #9ca3af; text-transform: uppercase; margin-bottom: 8px;">
+                    syllabus → calendar
+                </div>
+                <h1 style="font-size: 26px; font-weight: 700; color: #111827; letter-spacing: -0.01em;">
+                    Extract deadlines from any syllabus
+                </h1>
+                <p style="color: #6b7280; font-size: 14px; margin-top: 6px;">
+                    Upload a PDF or text file — Gemini finds the dates, you choose where they go.
+                </p>
+            </div>
+
+            <div class="panel p-4 sm:p-8">
+
+                <div class="step-indicator">
+                    <div class="step-item active" data-step="1">
+                        <div class="step-connector"></div>
+                        <div class="step-circle">01</div>
+                        <div class="step-text">Upload</div>
+                    </div>
+                    <div class="step-item" data-step="2">
+                        <div class="step-connector"></div>
+                        <div class="step-circle">02</div>
+                        <div class="step-text">Process</div>
+                    </div>
+                    <div class="step-item" data-step="3">
+                        <div class="step-connector"></div>
+                        <div class="step-circle">03</div>
+                        <div class="step-text">Review</div>
+                    </div>
+                    <div class="step-item" data-step="4">
+                        <div class="step-connector"></div>
+                        <div class="step-circle">04</div>
+                        <div class="step-text">Calendar</div>
+                    </div>
+                    <div class="step-item" data-step="5">
+                        <div class="step-connector"></div>
+                        <div class="step-circle">05</div>
+                        <div class="step-text">Done</div>
+                    </div>
+                </div>
+
+                <div id="globalError" class="global-error">
+                    <div style="font-size:16px;">⚠</div>
+                    <div>
+                        <div class="error-text" style="font-weight:600;"></div>
+                        <div class="error-hint" style="font-size:12px; margin-top:3px; opacity:0.85;"></div>
+                    </div>
+                    <button class="close-btn" onclick="dismissError()">&times;</button>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- Step 1: Upload -->
+                <div class="section active" id="step-1">
+                    <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                        <div style="font-size: 34px; margin-bottom: 12px;">📄</div>
+                        <p style="font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 6px;">
+                            Click to upload or drag & drop
+                        </p>
+                        <p class="mono" style="color: #9ca3af; font-size: 12px;">
+                            .pdf · .txt · .md — max 20 MB
+                        </p>
+                    </div>
+                    <input type="file" id="fileInput" accept=".pdf,.txt,.md" style="display: none;" onchange="handleFileSelect(event)">
+
+                    <div style="margin-top: 16px; text-align: center;">
+                        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                            Choose file
+                        </button>
+                    </div>
+
+                    <div style="display:flex; align-items:center; gap:12px; margin: 22px 0 16px;">
+                        <div style="flex:1; height:1px; background:#e5e7eb;"></div>
+                        <span class="mono" style="font-size:11px; color:#9ca3af;">or</span>
+                        <div style="flex:1; height:1px; background:#e5e7eb;"></div>
+                    </div>
+
+                    <div style="text-align: center;">
+                        <button class="btn btn-secondary btn-sm" onclick="startManualEntry()">
+                            + Add an event manually
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Processing (real, SSE-driven status) -->
+                <div class="section" id="step-2">
+                    <div style="text-align: center; padding: 10px 10px 6px;">
+                        <h3 style="font-size: 16px; font-weight: 700; color: #111827;">
+                            Processing <span id="processingFile" class="mono" style="color:#4f46e5;"></span>
+                        </h3>
+                        <div id="queueStatus" class="mono" style="display:none; font-size:12px; color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:8px 12px; margin:14px auto 0; max-width:440px; text-align:left;"></div>
+                        <div class="process-steps">
+                            <div class="process-step" data-phase="extract">
+                                <div class="process-step-icon">1</div>
+                                <div class="process-step-body">
+                                    <div class="process-step-title">Extracting text</div>
+                                    <div class="process-step-message"></div>
+                                </div>
+                            </div>
+                            <div class="process-step" data-phase="ai">
+                                <div class="process-step-icon">2</div>
+                                <div class="process-step-body">
+                                    <div class="process-step-title">Analyzing with Gemini AI</div>
+                                    <div class="process-step-message"></div>
+                                </div>
+                            </div>
+                            <div class="process-step" data-phase="validate">
+                                <div class="process-step-icon">3</div>
+                                <div class="process-step-body">
+                                    <div class="process-step-title">Validating &amp; normalizing</div>
+                                    <div class="process-step-message"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="elapsed-timer">elapsed: <span id="elapsedTime">0.0s</span></div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Review Events -->
+                <div class="section" id="step-3">
+                    <h2 style="font-size: 19px; font-weight: 700; color: #111827; margin-bottom: 6px;">
+                        Review extracted events
+                    </h2>
+                    <p style="color: #6b7280; margin-bottom: 16px; font-size: 13px;">
+                        Check, edit, or remove events before choosing where to mark them.
+                    </p>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px;">
+                        <div class="summary-stat">
+                            <div class="label">Total events</div>
+                            <div class="number" id="eventCount">0</div>
+                        </div>
+                        <div class="summary-stat">
+                            <div class="label">Course name</div>
+                            <div class="number" id="courseName" style="font-size: 15px;">-</div>
+                        </div>
+                    </div>
+
+                    <div id="eventsList" style="margin-bottom: 20px;"></div>
+
+                    <button class="btn btn-add" onclick="addNewEvent()" style="margin-bottom: 18px; width: 100%;">
+                        + Add event
+                    </button>
+
+                    <div id="incompleteWarning" class="mono" style="display:none; font-size:12px; color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:8px 12px; margin-bottom:12px;"></div>
+
+                    <div style="display: flex; gap: 10px; margin-top: 24px;">
+                        <button class="btn btn-secondary" onclick="goToStep(1)" style="flex: 1;">
+                            ← Back
+                        </button>
+                        <button class="btn btn-primary" id="continueToCalendarBtn" onclick="openDestinationModal()" style="flex: 1;">
+                            Choose calendar →
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 5: Done -->
+                <div class="section" id="step-5">
+                    <div style="text-align: center; padding: 28px 20px;">
+                        <div id="doneIcon" style="font-size: 44px; margin-bottom: 14px;">✅</div>
+                        <h2 id="doneHeading" style="font-size: 21px; font-weight: 700; color: #111827; margin-bottom: 8px;">
+                            All set!
+                        </h2>
+                        <p id="doneSubtext" style="color: #6b7280; font-size: 14px; margin-bottom: 20px;"></p>
+
+                        <div id="doneExtra" style="display:flex; flex-direction:column; gap:10px; max-width:320px; margin:0 auto 20px;"></div>
+
+                        <button class="btn btn-secondary" style="width: 100%; padding: 12px;" onclick="resetToUpload()">
+                            Process another syllabus
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 28px; color: #9ca3af;">
+                <p class="mono" style="font-size: 11.5px;">
+                    powered by google gemini
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Choose-calendar popup modal (opened from Step 3, not a wizard section) -->
+    <div id="destModalBackdrop" class="modal-backdrop">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="destModalTitle">
+            <button class="modal-close" onclick="closeDestinationModal()" aria-label="Close">&times;</button>
+
+            <h2 id="destModalTitle" style="font-size: 19px; font-weight: 700; color: #111827; margin-bottom: 6px;">
+                Choose your calendar
+            </h2>
+            <p style="color: #6b7280; margin-bottom: 4px; font-size: 13px;">
+                Where would you like these <span id="destEventCount" class="mono">0</span> events marked?
+            </p>
+
+            <div class="destination-grid">
+                <div class="dest-card" data-dest="device" onclick="selectDestination('device')">
+                    <span class="dest-badge">Default</span>
+                    <div class="dest-icon">💻</div>
+                    <div class="dest-title">Device / Other</div>
+                    <div class="dest-desc">Downloads a file that opens straight into your phone or computer's own calendar app. No sign-in.</div>
+                </div>
+                <div class="dest-card" data-dest="google" onclick="selectDestination('google')">
+                    <div class="dest-icon">🟦</div>
+                    <div class="dest-title">Google Calendar</div>
+                    <div class="dest-desc">Pushed directly via your account — no file needed.</div>
+                </div>
+                <div class="dest-card" data-dest="apple" onclick="selectDestination('apple')">
+                    <div class="dest-icon">🍎</div>
+                    <div class="dest-title">Apple Calendar</div>
+                    <div class="dest-desc">Download a file that opens straight into Calendar.</div>
+                </div>
+            </div>
+
+            <div id="destPanel" class="dest-panel"></div>
+        </div>
+    </div>
+
+    <script>
+        const TOTAL_STEPS = 5;
+        const API_BASE = ''; // relative -- frontend is served by the same FastAPI app
+
+        let currentEvents = [];
+        let uploadedFileName = '';
+        let selectedDestination = null; // 'device' | 'google' | 'apple'
+        let googlePushResult = null;
+        let elapsedTimerId = null;
+        let processStartTime = null;
+
+        // ---- Drag and drop ----
+        const uploadZone = document.querySelector('.upload-zone');
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+
+        uploadZone.addEventListener('dragover', () => uploadZone.classList.add('dragover'));
+        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+        uploadZone.addEventListener('drop', (e) => {
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length) handleFile(files[0]);
+        });
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) handleFile(file);
+        }
+
+        function handleFile(file) {
+            uploadedFileName = file.name;
+            streamProcess(file);
+        }
+
+        // ---- Step 2: real SSE-driven processing ----
+        async function streamProcess(file) {
+            dismissError();
+            goToStep(2);
+            resetProcessSteps();
+            startElapsedTimer();
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            let response;
+            try {
+                response = await fetch(API_BASE + '/process', { method: 'POST', body: formData });
+            } catch (err) {
+                stopElapsedTimer();
+                showError('Cannot connect to the server. Is it running?');
+                goToStep(1);
+                return;
+            }
+
+            if (!response.ok) {
+                stopElapsedTimer();
+                let detail = `Server error (${response.status}): upload failed`;
+                try {
+                    const data = await response.json();
+                    detail = data.detail || detail;
+                } catch (e) { /* body wasn't JSON */ }
+                showError(detail);
+                goToStep(1);
+                return;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            try {
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    let sep;
+                    while ((sep = buffer.indexOf('\n\n')) !== -1) {
+                        const rawEvent = buffer.slice(0, sep);
+                        buffer = buffer.slice(sep + 2);
+                        handleSseMessage(rawEvent);
+                    }
+                }
+            } catch (err) {
+                stopElapsedTimer();
+                showError('Connection interrupted while processing: ' + err.message);
+                goToStep(1);
+            }
+        }
+
+        function resetProcessSteps() {
+            document.querySelectorAll('.process-step').forEach(el => {
+                el.classList.remove('active', 'done');
+                el.querySelector('.process-step-message').textContent = '';
+            });
+            document.getElementById('processingFile').textContent = uploadedFileName;
+            const queueStatus = document.getElementById('queueStatus');
+            queueStatus.style.display = 'none';
+            queueStatus.textContent = '';
+        }
+
+        function handleSseMessage(rawEvent) {
+            let eventType = 'message';
+            let dataLine = '';
+            rawEvent.split('\n').forEach(line => {
+                if (line.startsWith('event:')) eventType = line.slice(6).trim();
+                else if (line.startsWith('data:')) dataLine += line.slice(5).trim();
+            });
+            if (!dataLine) return;
+
+            let payload;
+            try { payload = JSON.parse(dataLine); } catch (e) { return; }
+
+            if (eventType === 'phase' && payload.phase === 'queued') {
+                // No matching .process-step for this phase -- it's a transient
+                // wait status shown above the checklist, not a pipeline step.
+                const queueStatus = document.getElementById('queueStatus');
+                queueStatus.textContent = payload.message || '';
+                queueStatus.style.display = payload.message ? 'block' : 'none';
+                return;
+            }
+
+            if (eventType === 'phase') {
+                // Once past queueing, hide the queue banner -- an actual
+                // pipeline phase is now progressing.
+                document.getElementById('queueStatus').style.display = 'none';
+                const el = document.querySelector(`.process-step[data-phase="${payload.phase}"]`);
+                if (!el) return;
+                if (payload.status === 'start') {
+                    el.classList.add('active');
+                } else if (payload.status === 'done') {
+                    el.classList.remove('active');
+                    el.classList.add('done');
+                }
+                el.querySelector('.process-step-message').textContent = payload.message || '';
+            } else if (eventType === 'error') {
+                stopElapsedTimer();
+                showError(payload.detail || 'Something went wrong while processing.');
+                goToStep(1);
+            } else if (eventType === 'result') {
+                stopElapsedTimer();
+                currentEvents = payload.events || [];
+                setTimeout(() => goToStep(3), 500);
+            }
+        }
+
+        function startElapsedTimer() {
+            processStartTime = performance.now();
+            elapsedTimerId = setInterval(() => {
+                const secs = ((performance.now() - processStartTime) / 1000).toFixed(1);
+                document.getElementById('elapsedTime').textContent = secs + 's';
+            }, 100);
+        }
+
+        function stopElapsedTimer() {
+            if (elapsedTimerId) clearInterval(elapsedTimerId);
+            elapsedTimerId = null;
+        }
+
+        // ---- Global error banner ----
+        function showError(message, hint) {
+            const banner = document.getElementById('globalError');
+            banner.querySelector('.error-text').textContent = message;
+            banner.querySelector('.error-hint').textContent = hint || suggestionFor(message);
+            banner.classList.add('show');
+        }
+
+        function dismissError() {
+            document.getElementById('globalError').classList.remove('show');
+        }
+
+        function suggestionFor(message) {
+            if (/rate limit|429|quota/i.test(message)) return 'Tip: wait a moment and try again, or check the API key\'s quota in Google Cloud Console.';
+            if (/timeout|504/i.test(message)) return 'Tip: the AI service is busy — try again shortly.';
+            if (/scanned pdf|image/i.test(message)) return 'Tip: use a text-based PDF, not a scanned image.';
+            if (/empty/i.test(message)) return 'Tip: the file might be corrupted — try a different one.';
+            return '';
+        }
+
+        // ---- Step navigation ----
+        function updateStepIndicator(step) {
+            document.querySelectorAll('.step-item').forEach(s => s.classList.remove('active', 'completed'));
+            for (let i = 1; i <= TOTAL_STEPS; i++) {
+                const stepItem = document.querySelector(`[data-step="${i}"]`);
+                if (i < step) stepItem.classList.add('completed');
+                else if (i === step) stepItem.classList.add('active');
+            }
+        }
+
+        function goToStep(step) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.getElementById('step-' + step).classList.add('active');
+            updateStepIndicator(step);
+
+            if (step === 3) populateEvents();
+            if (step === 5) prepareDoneStep();
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // ---- Choose-calendar modal (opened from Step 3, not a wizard section) ----
+        function openDestinationModal() {
+            document.getElementById('destModalBackdrop').classList.add('open');
+            updateStepIndicator(4);
+            prepareDestinationStep();
+            selectDestination('device'); // pre-selected default: zero setup, works everywhere
+            document.addEventListener('keydown', _handleModalEscape);
+        }
+
+        function closeDestinationModal() {
+            document.getElementById('destModalBackdrop').classList.remove('open');
+            document.removeEventListener('keydown', _handleModalEscape);
+        }
+
+        function _handleModalEscape(e) {
+            if (e.key === 'Escape') closeDestinationModal();
+        }
+
+        document.getElementById('destModalBackdrop').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeDestinationModal();
+        });
+
+        // ---- Step 3: Review ----
+        function isEventIncomplete(event) {
+            return !((event.course_name || '').trim()) || !((event.task_name || '').trim()) || !event.due_date;
+        }
+
+        function populateEvents() {
+            const eventsList = document.getElementById('eventsList');
+            eventsList.innerHTML = '';
+            document.getElementById('eventCount').textContent = currentEvents.length;
+            document.getElementById('courseName').textContent = (currentEvents[0] && currentEvents[0].course_name) || 'Unknown';
+
+            if (currentEvents.length === 0) {
+                eventsList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>No events extracted. Please upload a valid syllabus, or add one manually.</p>
+                    </div>
+                `;
+                updateContinueGate();
+                return;
+            }
+
+            currentEvents.forEach((event, index) => {
+                eventsList.innerHTML += createEventCard(event, index);
+            });
+            updateContinueGate();
+        }
+
+        function updateContinueGate() {
+            const btn = document.getElementById('continueToCalendarBtn');
+            const warn = document.getElementById('incompleteWarning');
+            const incompleteCount = currentEvents.filter(isEventIncomplete).length;
+
+            if (currentEvents.length === 0 || incompleteCount > 0) {
+                btn.disabled = true;
+                warn.style.display = 'block';
+                warn.textContent = currentEvents.length === 0
+                    ? 'Add at least one event before continuing.'
+                    : `${incompleteCount} event(s) need a course, task, and date filled in before continuing.`;
+            } else {
+                btn.disabled = false;
+                warn.style.display = 'none';
+            }
+        }
+
+        function createEventCard(event, index) {
+            const incomplete = isEventIncomplete(event);
+            return `
+                <div class="event-card${incomplete ? ' incomplete' : ''}" data-index="${index}">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <div class="mono" style="font-weight: 700; color: #4f46e5; font-size: 12px;">
+                            EVENT ${String(index + 1).padStart(2, '0')}
+                            <span class="incomplete-tag" style="${incomplete ? '' : 'display:none;'}">needs info</span>
+                        </div>
+                        <button class="btn btn-danger btn-sm" onclick="removeEvent(${index})">
+                            Delete
+                        </button>
+                    </div>
+
+                    <div class="event-field-row">
+                        <div>
+                            <label class="field-label">Course</label>
+                            <input type="text" value="${event.course_name || ''}" onchange="updateEvent(${index}, 'course_name', this.value)" placeholder="e.g. CS101">
+                        </div>
+                        <div>
+                            <label class="field-label">Task / assignment</label>
+                            <input type="text" value="${event.task_name || ''}" onchange="updateEvent(${index}, 'task_name', this.value)" placeholder="e.g. Midterm Exam">
+                        </div>
+                    </div>
+
+                    <div class="event-field-row">
+                        <div>
+                            <label class="field-label">Due date</label>
+                            <input type="date" value="${event.due_date || ''}" onchange="updateEvent(${index}, 'due_date', this.value)">
+                        </div>
+                        <div>
+                            <label class="field-label">Due time</label>
+                            <input type="time" value="${event.due_time || '23:59'}" onchange="updateEvent(${index}, 'due_time', this.value)">
+                        </div>
+                    </div>
+
+                    <div class="event-field" style="margin-bottom:0;">
+                        <label class="field-label">Description</label>
+                        <textarea onchange="updateEvent(${index}, 'description', this.value)" placeholder="Notes about this event...">${event.description || ''}</textarea>
+                    </div>
+                </div>
+            `;
+        }
+
+        function refreshCardIncompleteState(index) {
+            const card = document.querySelector(`.event-card[data-index="${index}"]`);
+            if (!card) return;
+            const incomplete = isEventIncomplete(currentEvents[index]);
+            card.classList.toggle('incomplete', incomplete);
+            const tag = card.querySelector('.incomplete-tag');
+            if (tag) tag.style.display = incomplete ? 'inline' : 'none';
+        }
+
+        function updateEvent(index, field, value) {
+            if (currentEvents[index]) {
+                currentEvents[index][field] = value;
+                if (index === 0 && field === 'course_name') {
+                    document.getElementById('courseName').textContent = value || 'Unknown';
+                }
+                refreshCardIncompleteState(index);
+                updateContinueGate();
+            }
+        }
+
+        function removeEvent(index) {
+            currentEvents.splice(index, 1);
+            populateEvents();
+        }
+
+        function emptyEvent() {
+            return {
+                course_name: '',
+                task_name: '',
+                due_date: new Date().toISOString().split('T')[0],
+                due_time: '23:59',
+                description: ''
+            };
+        }
+
+        function addNewEvent() {
+            const newEvent = emptyEvent();
+            newEvent.course_name = (currentEvents[0] && currentEvents[0].course_name) || '';
+            currentEvents.push(newEvent);
+            populateEvents();
+        }
+
+        function startManualEntry() {
+            currentEvents = [emptyEvent()];
+            uploadedFileName = '';
+            dismissError();
+            goToStep(3);
+        }
+
+        // ---- Step 4: Choose your calendar ----
+        function prepareDestinationStep() {
+            selectedDestination = null;
+            document.getElementById('destEventCount').textContent = currentEvents.length;
+            document.querySelectorAll('.dest-card').forEach(c => c.classList.remove('selected'));
+            document.getElementById('destPanel').innerHTML = '';
+        }
+
+        async function selectDestination(dest) {
+            selectedDestination = dest;
+            dismissError();
+            document.querySelectorAll('.dest-card').forEach(c => c.classList.toggle('selected', c.dataset.dest === dest));
+            const panel = document.getElementById('destPanel');
+
+            if (dest === 'google') {
+                panel.innerHTML = renderGooglePanel(false);
+                try {
+                    const res = await fetch(API_BASE + '/auth/google/status');
+                    const data = await res.json();
+                    panel.innerHTML = renderGooglePanel(!!data.connected);
+                } catch (e) {
+                    panel.innerHTML = renderGooglePanel(false);
+                }
+            } else {
+                panel.innerHTML = renderIcsPanel(dest);
+            }
+        }
+
+        function renderGooglePanel(connected) {
+            const label = connected
+                ? `Push ${currentEvents.length} event(s) to Google Calendar`
+                : 'Connect Google Calendar & push events';
+            return `
+                <div class="dest-panel-inner">
+                    <p>${connected ? 'Google Calendar is connected.' : "You'll be asked to sign in to Google in a popup window."}</p>
+                    <p class="hint">Events go into a dedicated "Syllabus Deadlines" calendar, so your personal calendar stays untouched.</p>
+                    <button class="btn btn-primary" id="googleActionBtn" style="width:100%; margin-top:6px;" onclick="handleGoogleAction()">${label}</button>
+                    <div id="googleResult" style="margin-top:12px;"></div>
+                </div>
+            `;
+        }
+
+        function renderIcsPanel(dest) {
+            const copy = dest === 'apple'
+                ? 'Download the file below, then double-click it — it opens directly in Apple Calendar (Mac or iOS).'
+                : 'Download the universal .ics file below — it works with Outlook, Yahoo Calendar, Windows Calendar, Thunderbird, and more.';
+            return `
+                <div class="dest-panel-inner">
+                    <p>${copy}</p>
+                    <button class="btn btn-primary" style="width:100%;" onclick="downloadCalendar()">Download calendar file</button>
+                    <button class="btn btn-secondary" style="width:100%; margin-top:8px;" onclick="closeDestinationModal(); goToStep(5);">Continue →</button>
+                </div>
+            `;
+        }
+
+        async function handleGoogleAction() {
+            const btn = document.getElementById('googleActionBtn');
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = 'Working...';
+
+            try {
+                const statusRes = await fetch(API_BASE + '/auth/google/status');
+                const statusData = await statusRes.json();
+                if (!statusData.connected) {
+                    btn.textContent = 'Waiting for Google sign-in...';
+                    await connectGoogle();
+                }
+                btn.textContent = 'Adding events...';
+                await pushToGoogle(btn);
+            } catch (err) {
+                showError('Google Calendar: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+            }
+        }
+
+        function connectGoogle() {
+            return new Promise((resolve, reject) => {
+                const popup = window.open(API_BASE + '/auth/google/login', 'googleAuth', 'width=520,height=650');
+                if (!popup) {
+                    reject(new Error('Popup blocked — allow popups for this site and try again.'));
+                    return;
+                }
+
+                let settled = false;
+                const closeCheck = setInterval(() => {
+                    if (popup.closed && !settled) {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        reject(new Error('Sign-in window was closed before finishing.'));
+                    }
+                }, 500);
+
+                function handler(evt) {
+                    if (evt.origin !== window.location.origin) return;
+                    if (!evt.data || !evt.data.type) return;
+                    if (evt.data.type === 'google-auth-success') {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        popup.close();
+                        resolve();
+                    } else if (evt.data.type === 'google-auth-error') {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        popup.close();
+                        reject(new Error(evt.data.detail || 'Google sign-in failed.'));
+                    }
+                }
+                window.addEventListener('message', handler);
+            });
+        }
+
+        async function pushToGoogle(btn) {
+            try {
+                const res = await fetch(API_BASE + '/calendar/google/push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ events: currentEvents })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Failed to push events.');
+                googlePushResult = data;
+                renderGoogleResult(data);
+            } catch (err) {
+                showError('Google push failed: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = 'Try again';
+            }
+        }
+
+        function renderGoogleResult(data) {
+            const resultDiv = document.getElementById('googleResult');
+            const failedNote = data.failed && data.failed.length ? `, ${data.failed.length} failed` : '';
+            resultDiv.innerHTML = `
+                <div class="status-message show status-success">${data.created} event(s) added to Google Calendar${failedNote}.</div>
+                <a href="${data.calendar_html_link}" target="_blank" class="btn btn-secondary" style="width:100%; margin-top:8px;">Open in Google Calendar</a>
+                <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="closeDestinationModal(); goToStep(5);">Continue →</button>
+            `;
+            document.getElementById('googleActionBtn').style.display = 'none';
+        }
+
+        async function handleMicrosoftAction() {
+            const btn = document.getElementById('microsoftActionBtn');
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = 'Working...';
+
+            try {
+                const statusRes = await fetch(API_BASE + '/auth/microsoft/status');
+                const statusData = await statusRes.json();
+                if (!statusData.connected) {
+                    btn.textContent = 'Waiting for Microsoft sign-in...';
+                    await connectMicrosoft();
+                }
+                btn.textContent = 'Adding events...';
+                await pushToMicrosoft(btn);
+            } catch (err) {
+                showError('Microsoft Calendar: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+            }
+        }
+
+        function connectMicrosoft() {
+            return new Promise((resolve, reject) => {
+                const popup = window.open(API_BASE + '/auth/microsoft/login', 'microsoftAuth', 'width=520,height=650');
+                if (!popup) {
+                    reject(new Error('Popup blocked — allow popups for this site and try again.'));
+                    return;
+                }
+
+                let settled = false;
+                const closeCheck = setInterval(() => {
+                    if (popup.closed && !settled) {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        reject(new Error('Sign-in window was closed before finishing.'));
+                    }
+                }, 500);
+
+                function handler(evt) {
+                    if (evt.origin !== window.location.origin) return;
+                    if (!evt.data || !evt.data.type) return;
+                    if (evt.data.type === 'microsoft-auth-success') {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        popup.close();
+                        resolve();
+                    } else if (evt.data.type === 'microsoft-auth-error') {
+                        settled = true;
+                        clearInterval(closeCheck);
+                        window.removeEventListener('message', handler);
+                        popup.close();
+                        reject(new Error(evt.data.detail || 'Microsoft sign-in failed.'));
+                    }
+                }
+                window.addEventListener('message', handler);
+            });
+        }
+
+        async function pushToMicrosoft(btn) {
+            try {
+                const res = await fetch(API_BASE + '/calendar/microsoft/push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ events: currentEvents })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Failed to push events.');
+                microsoftPushResult = data;
+                renderMicrosoftResult(data);
+            } catch (err) {
+                showError('Microsoft push failed: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = 'Try again';
+            }
+        }
+
+        function renderMicrosoftResult(data) {
+            const resultDiv = document.getElementById('microsoftResult');
+            const failedNote = data.failed && data.failed.length ? `, ${data.failed.length} failed` : '';
+            resultDiv.innerHTML = `
+                <div class="status-message show status-success">${data.created} event(s) added to Microsoft Calendar${failedNote}.</div>
+                <a href="${data.calendar_html_link}" target="_blank" class="btn btn-secondary" style="width:100%; margin-top:8px;">Open Outlook Calendar</a>
+                <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="closeDestinationModal(); goToStep(5);">Continue →</button>
+            `;
+            document.getElementById('microsoftActionBtn').style.display = 'none';
+        }
+
+        // ---- Step 5: Done ----
+        function prepareDoneStep() {
+            const heading = document.getElementById('doneHeading');
+            const subtext = document.getElementById('doneSubtext');
+            const extra = document.getElementById('doneExtra');
+
+            if (selectedDestination === 'google') {
+                heading.textContent = 'Added to Google Calendar!';
+                subtext.textContent = `${currentEvents.length} event(s) are now in your "Syllabus Deadlines" calendar.`;
+                extra.innerHTML = googlePushResult
+                    ? `<a href="${googlePushResult.calendar_html_link}" target="_blank" class="btn btn-secondary">Open Google Calendar</a>`
+                    : '';
+            } else if (selectedDestination === 'microsoft') {
+                heading.textContent = 'Added to Microsoft Calendar!';
+                subtext.textContent = `${currentEvents.length} event(s) are now in your "Syllabus Deadlines" calendar.`;
+                extra.innerHTML = microsoftPushResult
+                    ? `<a href="${microsoftPushResult.calendar_html_link}" target="_blank" class="btn btn-secondary">Open Outlook Calendar</a>`
+                    : '';
+            } else {
+                const destLabel = selectedDestination === 'apple' ? 'Apple Calendar' : 'your calendar app';
+                heading.textContent = 'Your calendar file is ready!';
+                subtext.textContent = `Open the downloaded file to add these events to ${destLabel}.`;
+                extra.innerHTML = `<button class="btn btn-secondary" onclick="downloadCalendar()">Download again</button>`;
+            }
+        }
+
+        async function downloadCalendar() {
+            try {
+                const response = await fetch(API_BASE + '/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ events: currentEvents })
+                });
+
+                if (!response.ok) throw new Error('Download failed');
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `syllabus_${new Date().getFullYear()}_events.ics`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } catch (error) {
+                showError('Download failed: ' + error.message);
+            }
+        }
+
+        function resetToUpload() {
+            currentEvents = [];
+            uploadedFileName = '';
+            selectedDestination = null;
+            googlePushResult = null;
+            microsoftPushResult = null;
+            document.getElementById('fileInput').value = '';
+            dismissError();
+            goToStep(1);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Iteration 1 -- core engine
+pymupdf>=1.24.0          # PDF text extraction (imported as fitz)
+google-genai>=0.8.0      # Google Gen AI SDK for Gemini API calls
+
+# Iteration 2 -- web server (install ahead of time)
+fastapi>=0.111.0         # Async web framework for /process and /download endpoints
+uvicorn[standard]>=0.30.0  # ASGI server to run FastAPI locally
+python-multipart>=0.0.9  # Required by FastAPI to accept file uploads
+python-dotenv>=1.0.0     # Loads GOOGLE_API_KEY from .env at server startup
+itsdangerous>=2.2.0      # Required by Starlette's SessionMiddleware (signed session cookies)
+
+# Iteration 3 -- Google Calendar OAuth push
+google-auth>=2.29.0             # Credentials objects + token refresh
+google-auth-oauthlib>=1.2.0     # OAuth 2.0 web-app flow (Flow class)
+google-api-python-client>=2.126.0  # Calendar API client
+tzlocal>=5.2             # Detect the user's local IANA timezone for event times
