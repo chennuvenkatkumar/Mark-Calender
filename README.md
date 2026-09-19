@@ -24,6 +24,7 @@
 
 - [✨ Highlights](#-highlights)
 - [🔄 How It Works](#-how-it-works)
+- [🏛️ Architecture Overview](#️-architecture-overview)
 - [🧭 User Flow](#-user-flow)
 - [🛠️ Tech Stack](#️-tech-stack)
 - [🏗️ Project Structure](#️-project-structure)
@@ -83,6 +84,59 @@ Calendar events are ready to use
 ```
 
 The web pipeline is coordinated by `server/main.py`. It validates the upload, extracts text through `src/ingest/file_ingestor.py`, calls Gemini through `src/ai/gemini_pipeline_controller.py`, normalizes the model response with `src/validation/string_validator.py`, and returns the result to the frontend as streamed events.
+
+---
+
+## 🏛️ Architecture Overview
+
+Mark Calendar uses a **single-origin architecture**: one FastAPI service (`server/main.py`) serves both the browser app (`index.html`) and backend API endpoints. This keeps the frontend/backend boundary simple (same host, same session cookie scope) while still separating responsibilities by runtime layer.
+
+```mermaid
+flowchart TD
+    A["Browser UI (index.html)\n5-step workflow: Upload → Processing → Review → Destination → Done"]
+    B["FastAPI Orchestrator (server/main.py)\n/, /process (SSE), /download, /calendar/google/*"]
+    C["Ingestion (src/ingest/file_ingestor.py)\nExtract PDF/TXT/MD text"]
+    D["AI Controller (src/ai/gemini_pipeline_controller.py)\nPrompt + Gemini model call"]
+    E["Validation (src/validation/string_validator.py)\nParse JSON, normalize fields, mark incomplete"]
+    F["ICS Export (src/export/icalendar_factory.py)\nBuild RFC 5545 .ics"]
+    G["Google Push (src/calendar_push/google_calendar_client.py)\nOAuth + Calendar event creation"]
+
+    A -->|"Upload syllabus"| B
+    B --> C --> B
+    B -->|"Gemini call (queued/throttled in server)"| D --> B
+    B --> E --> B
+    B -->|"Review/edit events in browser"| A
+    A -->|"Device/Apple export"| B --> F --> A
+    A -->|"Google destination"| B --> G
+```
+
+### Runtime layers and responsibilities
+
+- **`index.html` (browser UI):** Implements the five-step flow (Upload, Processing, Review & Edit, Choose Calendar, Done), opens `/process` SSE, lets users fix extracted rows, and posts reviewed events to export/push endpoints.
+- **`server/main.py` (orchestrator/API):** Serves `index.html`, validates uploads, runs the extraction pipeline, streams live phase/result/error updates over SSE, manages session IDs/cookies, throttles Gemini calls (concurrency + per-minute rate window), and exposes Google Calendar OAuth/push routes.
+- **`src/ingest/file_ingestor.py` (ingestion):** Extracts text from syllabus files in memory (`.pdf` via PyMuPDF, `.txt`/`.md` via UTF-8 decode/read).
+- **`src/ai/gemini_pipeline_controller.py` (AI adapter):** Builds the strict extraction prompt and executes Gemini model requests (injected client or SDK path). Concurrency/rate limits are enforced by `server/main.py` around these calls.
+- **`src/validation/string_validator.py` (normalization):** Isolates/parses model JSON, normalizes date/time fields, and marks malformed/missing rows as `incomplete` so one bad row does not fail the full batch.
+- **`src/export/icalendar_factory.py` (calendar export):** Converts reviewed events into RFC 5545-compliant `.ics` text used for Device/Apple downloads.
+- **`src/calendar_push/google_calendar_client.py` (Google integration):** Handles OAuth flow, session-bound credential storage, dedicated calendar lookup/creation, and Google Calendar event insertion.
+
+### End-to-end request/data flow
+
+1. User uploads a syllabus in the browser (`index.html`).
+2. `POST /process` in `server/main.py` validates file type/size/content.
+3. `file_ingestor.py` extracts plain text from file bytes.
+4. `GeminiPipelineController` sends a structured prompt to Gemini and returns raw model output.
+5. `string_validator.py` parses/normalizes events and flags incomplete entries.
+6. Server streams results back via SSE; user reviews/edits events in the browser.
+7. User chooses output:
+   - **Device/Apple:** browser sends events to `/download`, which calls `build_ics()` and returns a downloadable `.ics`.
+   - **Google Calendar:** OAuth/session routes establish connection, then `/calendar/google/push` calls `google_calendar_client.push_events()`.
+
+### Operational characteristics
+
+- **In-memory processing:** Uploaded file contents are processed from memory (not persisted as user data), and there is **no database** in the current architecture.
+- **Session-scoped credentials:** Google OAuth tokens are kept in in-memory per-session buckets keyed by signed session IDs.
+- **Deployment model:** The same FastAPI app is deployed as one web process (see `Procfile`) and is configured for Render via `render.yaml`.
 
 ---
 
@@ -526,7 +580,6 @@ When changing the extraction contract, review all downstream consumers: `string_
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
-
 <div align="center">
 
 **From syllabus chaos to calendar clarity 📚 → 📅**
