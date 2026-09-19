@@ -575,6 +575,11 @@ When changing the extraction contract, review all downstream consumers: `string_
 
 ---
 
+## 📄 License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+---
 <div align="center">
 
 **From syllabus chaos to calendar clarity 📚 → 📅**
